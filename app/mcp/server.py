@@ -1,3 +1,7 @@
+import os
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 """MCP (Model Context Protocol) server for the SFR Shared Framework Repository.
 
 Provides AI-agent-friendly tools over the existing repository logic.
@@ -365,6 +369,25 @@ def compare_frameworks(
 # SSE transport ASGI app (for mounting inside FastAPI)
 # ═══════════════════════════════════════════════════════════════════════
 def create_sse_app():
+        # --- API Key Auth Middleware ---
+        API_KEY = os.environ.get("MCP_API_KEY")
+        class APIKeyAuthMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                # Only protect /mcp endpoints
+                if request.url.path.startswith("/mcp"):
+                    auth = request.headers.get("authorization")
+                    if not auth or not auth.lower().startswith("bearer "):
+                        return JSONResponse({"error": "Missing or invalid Authorization header"}, status_code=401)
+                    token = auth.split(" ", 1)[1]
+                    if not API_KEY or token != API_KEY:
+                        return JSONResponse({"error": "Invalid API key"}, status_code=403)
+                return await call_next(request)
+
+        # --- Disable Host Header Check Middleware ---
+        class DisableHostCheckMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                # Remove host header check by always allowing
+                return await call_next(request)
     """Return the MCP server as a Starlette ASGI app for SSE transport.
 
     Mount this inside the FastAPI app:
@@ -392,8 +415,9 @@ def create_sse_app():
                 allow_methods=["*"],
                 allow_headers=["*"],
             ),
+            Middleware(DisableHostCheckMiddleware),
+            Middleware(APIKeyAuthMiddleware),
         ],
-        # allowed_hosts removed for compatibility with Starlette version on Render
     )
 
 
