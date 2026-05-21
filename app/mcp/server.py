@@ -393,6 +393,7 @@ def create_sse_app():
                 allow_headers=["*"],
             ),
         ],
+        allowed_hosts=["*"],  # Accept all hosts; for production, restrict to your domain
     )
 
 
