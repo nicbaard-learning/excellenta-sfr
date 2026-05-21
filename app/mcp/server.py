@@ -1,3 +1,6 @@
+
+from __future__ import annotations
+
 import os
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -6,15 +9,13 @@ from starlette.responses import JSONResponse
 
 Provides AI-agent-friendly tools over the existing repository logic.
 Supports two transport modes:
-  - stdio (default): for Claude Desktop, Cursor, Windsurf, etc.
-  - SSE: for remote HTTP access when mounted inside the FastAPI app.
+    - stdio (default): for Claude Desktop, Cursor, Windsurf, etc.
+    - SSE: for remote HTTP access when mounted inside the FastAPI app.
 
 Run locally:
-    python -m app.mcp.server                           # stdio (CLI)
-    uvicorn app.main:app --reload                       # SSE at http://localhost:8000/mcp
+        python -m app.mcp.server                           # stdio (CLI)
+        uvicorn app.main:app --reload                       # SSE at http://localhost:8000/mcp
 """
-
-from __future__ import annotations
 
 import logging
 import sys

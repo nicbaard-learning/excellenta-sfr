@@ -5,16 +5,10 @@ import traceback
 print("=== SFR app.main.py: startup ===", flush=True)
 
 
-"""SFR – Shared Framework Repository — FastAPI application entry point.
-
-Run locally:
-    uvicorn app.main:app --reload
-"""
 
 try:
 
 
-    from __future__ import annotations
 
     import logging
     from contextlib import asynccontextmanager
@@ -30,6 +24,16 @@ try:
     # ── Register API routers ──────────────────────────────────────────────
     from app.api import frameworks, controls, compare, recommend, reference  # noqa: E402
     from app.ui import router as ui_router  # noqa: E402
+    from dotenv import load_dotenv
+    import os
+    
+    dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    load_dotenv(dotenv_path)  # Load environment variables from .env file
+
+    print(os.environ.get("MCP_API_KEY"))
+    
+    print(os.environ.get("DEFAULT_WORKBOOK"))
+
 
     logger = logging.getLogger(__name__)
 
@@ -58,6 +62,7 @@ try:
 
     # ── CORS ──────────────────────────────────────────────────────────────
     app.add_middleware(
+
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
