@@ -30,10 +30,6 @@ try:
     dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
     load_dotenv(dotenv_path)  # Load environment variables from .env file
 
-    print(os.environ.get("MCP_API_KEY"))
-    
-    print(os.environ.get("DEFAULT_WORKBOOK"))
-
 
     logger = logging.getLogger(__name__)
 

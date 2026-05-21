@@ -420,6 +420,7 @@ def create_sse_app():
             Middleware(DisableHostCheckMiddleware),
             Middleware(APIKeyAuthMiddleware),
         ],
+        allowed_hosts=["*"]
     )
 
 
