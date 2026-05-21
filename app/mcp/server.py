@@ -393,7 +393,7 @@ def create_sse_app():
                 allow_headers=["*"],
             ),
         ],
-        allowed_hosts=["*"],  # Accept all hosts; for production, restrict to your domain
+        # allowed_hosts removed for compatibility with Starlette version on Render
     )
 
 
