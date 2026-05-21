@@ -68,6 +68,13 @@ app.include_router(compare.router)
 app.include_router(recommend.router)
 app.include_router(reference.router)
 
+# ── MCP (SSE transport) ──────────────────────────────────────────────
+# Mounts the Model Context Protocol server for AI-agent access.
+# Clients connect via GET /mcp/sse and POST /mcp/messages.
+from app.mcp.server import create_sse_app  # noqa: E402
+
+app.mount("/mcp", create_sse_app(), name="mcp")
+
 
 # ── Global exception handler ──────────────────────────────────────────
 @app.exception_handler(Exception)
