@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Recommend Frameworks{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Framework Recommendation</h1>
+  <p>Choose your context to get recommended compliance frameworks, then compare them side by side.</p>
+</div>
+
+<!-- Context form -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Your Context</div>
+  <div class="card-body">
+    <form method="GET" action="/recommend" id="recommend-form">
+      <!-- Row 1: filters -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="jurisdiction">Jurisdiction / Country</label>
+          <select name="jurisdiction" id="jurisdiction">
+            <option value="">— Any —</option>
+            {% for j in jurisdictions %}
+            <option value="{{ j.code }}" {% if selected_jurisdiction == j.code %}selected{% endif %}>{{ j.code }} — {{ j.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="business_model">Business Model</label>
+          <select name="business_model" id="business_model">
+            <option value="">— Any —</option>
+            {% for m in business_models %}
+            <option value="{{ m.code }}" {% if selected_business_model == m.code %}selected{% endif %}>{{ m.code }} — {{ m.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="category">Category</label>
+          <select name="category" id="category">
+            <option value="">— Any —</option>
+            {% for c in categories %}
+            <option value="{{ c }}" {% if selected_category == c %}selected{% endif %}>{{ c|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <!-- Row 2: keyword search -->
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr;gap:8px;">
+        <div class="form-group" style="margin:0;">
+          <label for="search">Keyword Search</label>
+          <input type="text" name="search" id="search" placeholder="Search by framework name, code, or publisher…" value="{{ selected_search or '' }}" style="width:100%;">
+        </div>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
+        <button type="submit" class="btn">Get Recommendations</button>
+        {% if has_query %}
+        <a href="/recommend" class="btn" style="background:transparent;color:var(--text-muted);border:1px solid var(--border);">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Results -->
+{% if has_query %}
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  {% if not recommendations %}
+  <div class="empty">
+    <p><strong>No recommendations</strong></p>
+    <p style="font-size:13px;color:var(--text-muted);margin-top:4px;">
+      No frameworks match the selected context. Try a different jurisdiction, category, or use the <strong>keyword search</strong> above.
+    </p>
+    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">
+      Tip: Try searching by framework name (e.g. "NIST", "ISO", "PCI"), publisher, or keyword.
+    </p>
+  </div>
+
+  {% else %}
+  <form method="GET" action="/compare" id="compare-redirect-form">
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">
+        <span>Recommended Frameworks</span>
+        <span class="badge primary">{{ recommendations|length }}</span>
+      </div>
+      <div class="card-body table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:40px;">Select</th>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Version</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for fw in recommendations %}
+            <tr>
+              <td>
+                <input type="checkbox" name="fw" value="{{ fw.id }}"
+                       class="fw-checkbox"
+                       data-code="{{ fw.code }}"
+                       {% if fw.id in recommended_ids %}checked{% endif %}>
+              </td>
+              <td><code>{{ fw.code }}</code></td>
+              <td>
+                <a href="/frameworks/{{ fw.id }}">{{ fw.name }}</a>
+                {% if fw.is_scf %}<span class="badge success" style="margin-left:4px;">SCF</span>{% endif %}
+              </td>
+              <td>{{ fw.category or "—" }}</td>
+              <td>{{ fw.version_label or "—" }}</td>
+              <td><a href="/frameworks/{{ fw.id }}">View →</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Filters applied -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">Filters Applied</div>
+      <div class="card-body">
+        {% if applied_filters %}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          {% for f in applied_filters %}
+          <span class="badge primary">{{ f }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p style="color:var(--text-muted);font-size:13px;">No filters applied — showing all non-SCF frameworks.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">Next Step: Compare</div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+          Select <strong>exactly two</strong> frameworks above, then click Compare to see their overlap, gaps, and differences.
+        </p>
+        <button type="submit" class="btn" id="compare-btn" disabled>
+          Compare Selected Frameworks →
+        </button>
+        <span id="selection-info" style="font-size:12px;color:var(--text-muted);margin-left:12px;"></span>
+      </div>
+    </div>
+  </form>
+
+  <script>
+    const checkboxes = document.querySelectorAll('.fw-checkbox');
+    const compareBtn = document.getElementById('compare-btn');
+    const selectionInfo = document.getElementById('selection-info');
+    const form = document.getElementById('compare-redirect-form');
+
+    function updateSelection() {
+      const checked = document.querySelectorAll('.fw-checkbox:checked');
+      const selected = Array.from(checked);
+      const count = selected.length;
+
+      if (count === 0) {
+        compareBtn.disabled = true;
+        selectionInfo.textContent = '';
+      } else if (count === 1) {
+        compareBtn.disabled = true;
+        selectionInfo.textContent = `1 selected — select one more`;
+      } else if (count === 2) {
+        compareBtn.disabled = false;
+        const codes = selected.map(cb => cb.getAttribute('data-code')).join(' vs ');
+        selectionInfo.textContent = `${codes} — ready to compare`;
+      } else {
+        compareBtn.disabled = true;
+        selectionInfo.textContent = `${count} selected — please select exactly 2`;
+      }
+    }
+
+    checkboxes.forEach(cb => {
+      cb.addEventListener('change', function() {
+        const checked = document.querySelectorAll('.fw-checkbox:checked');
+        if (checked.length > 2) {
+          this.checked = false;
+        }
+        updateSelection();
+      });
+    });
+
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const checked = document.querySelectorAll('.fw-checkbox:checked');
+      if (checked.length !== 2) return;
+      const ids = Array.from(checked).map(cb => cb.value);
+      window.location.href = `/compare?fw1=${ids[0]}&fw2=${ids[1]}`;
+    });
+
+    // Initial state
+    updateSelection();
+  </script>
+  {% endif %}
+{% else %}
+<!-- Initial empty state -->
+<div class="empty">
+  <p><strong>Ready to find the right frameworks</strong></p>
+  <p style="font-size:13px;color:var(--text-muted);margin-top:4px;">
+    Select a jurisdiction, business model, or category above, or enter a <strong>keyword</strong> to search framework names, codes, and publishers.
+  </p>
+  <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">
+    Then click <strong>Get Recommendations</strong> to see matching frameworks and compare them side by side.
+  </p>
+</div>
+{% endif %}
+
+{% endblock %}

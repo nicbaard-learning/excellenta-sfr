@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Compare Frameworks{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Compare Frameworks</h1>
+  <p>Select two frameworks to see their overlap, gaps, and differences.</p>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Select Frameworks</div>
+  <div class="card-body">
+    <form method="GET" action="/compare">
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;">
+        <div class="form-group" style="margin:0;">
+          <label for="fw1">Framework A</label>
+          <select name="fw1" id="fw1">
+            <option value="">— Select —</option>
+            {% for fw in all_frameworks %}
+            <option value="{{ fw.id }}" {% if fw1_id == fw.id %}selected{% endif %}>{{ fw.code }} — {{ fw.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="fw2">Framework B</label>
+          <select name="fw2" id="fw2">
+            <option value="">— Select —</option>
+            {% for fw in all_frameworks %}
+            <option value="{{ fw.id }}" {% if fw2_id == fw.id %}selected{% endif %}>{{ fw.code }} — {{ fw.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn">Compare</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if result %}
+{% if result.error %}
+<div class="error">{{ result.error }}</div>
+{% else %}
+<!-- Overlap card -->
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span>Overlapping Controls (present in both)</span>
+    <span class="badge success">{{ result.overlap_count }}</span>
+  </div>
+  <div class="card-body table-wrap">
+    {% if result.overlapping_controls %}
+    <table>
+      <thead>
+        <tr><th>SCF #</th><th>Title</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for c in result.overlapping_controls %}
+        <tr>
+          <td class="scf-id"><a href="/controls/{{ c.id }}">{{ c.scf_id }}</a></td>
+          <td><a href="/controls/{{ c.id }}">{{ c.title[:80] }}{% if c.title|length > 80 %}…{% endif %}</a></td>
+          <td><a href="/controls/{{ c.id }}">Detail →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><p>No overlapping controls.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Gap controls -->
+<div class="compare-grid">
+  {% for fid, fw_name in [(result.framework_ids[0], result.framework_names[result.framework_ids[0]]), (result.framework_ids[1], result.framework_names[result.framework_ids[1]])] %}
+  <div class="compare-col">
+    <h3>
+      Unique to {{ fw_name }}
+      <span class="badge warn" style="float:right;">{{ result.unique_control_count[fid] }}</span>
+    </h3>
+    {% if result.gap_controls[fid] %}
+    <ul>
+      {% for c in result.gap_controls[fid][:30] %}
+      <li><a href="/controls/{{ c.id }}"><code>{{ c.scf_id }}</code></a> {{ c.title[:50] }}</li>
+      {% endfor %}
+      {% if result.gap_controls[fid]|length > 30 %}
+      <li style="color:var(--text-muted);font-style:italic;">…and {{ result.gap_controls[fid]|length - 30 }} more</li>
+      {% endif %}
+    </ul>
+    {% else %}
+    <div class="empty" style="padding:20px;"><p>No unique controls.</p></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <div class="compare-col">
+    <h3>Summary</h3>
+    <div style="padding:12px 16px;">
+      <div class="count" style="color:var(--accent);">{{ result.overlap_count }}</div>
+      <div style="font-size:12px;color:var(--text-muted);text-align:center;">overlapping controls</div>
+      <hr style="margin:12px 0;border:none;border-top:1px solid var(--border);">
+      {% for fid, fw_name in result.framework_names.items() %}
+      <div style="margin-bottom:8px;">
+        <div style="font-size:12px;color:var(--text-muted);">{{ fw_name }}</div>
+        <div style="font-size:18px;font-weight:700;">{{ result.unique_control_count[fid] }}</div>
+        <div style="font-size:11px;color:var(--text-muted);">unique controls</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% elif fw1_id or fw2_id %}
+<div class="empty"><p>Select both frameworks to see comparison results.</p></div>
+{% endif %}
+{% endblock %}

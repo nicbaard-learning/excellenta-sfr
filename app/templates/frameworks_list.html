@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Frameworks{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Compliance Frameworks</h1>
+  <p>{{ total }} frameworks loaded from the SCF workbook</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span>All Frameworks</span>
+    <span class="badge primary">{{ total }} total</span>
+  </div>
+  <div class="card-body table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Controls</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fw in frameworks %}
+        <tr>
+          <td><code>{{ fw.code }}</code></td>
+          <td>
+            <a href="/frameworks/{{ fw.id }}">{{ fw.name }}</a>
+            {% if fw.is_scf %}<span class="badge success">SCF</span>{% endif %}
+          </td>
+          <td>{% if fw.category %}{{ fw.category }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{{ fw.control_count }}</td>
+          <td><a href="/frameworks/{{ fw.id }}">View →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

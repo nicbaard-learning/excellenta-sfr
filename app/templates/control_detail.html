@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}{% if control %}{{ control.scf_id }} — {{ control.title[:60] }}{% else %}Not Found{% endif %}{% endblock %}
+{% block content %}
+
+{% if error %}
+<div class="error">{{ error }}</div>
+<a href="/frameworks">← Back to Frameworks</a>
+{% else %}
+
+{% set c = control %}
+
+<div class="page-header">
+  <a href="javascript:history.back()" style="font-size:13px;">← Back</a>
+  <h1 style="margin-top:8px;"><code>{{ c.scf_id }}</code> {{ c.title }}</h1>
+  <p style="color:var(--text-muted);">
+    {% if c.domain_name %}{{ c.domain_name }} · {% endif %}
+    {% if c.conformity_cadence %}Cadence: {{ c.conformity_cadence }} · {% endif %}
+    {% if c.relative_weighting %}Weight: {{ "%.1f"|format(c.relative_weighting) }}{% endif %}
+  </p>
+</div>
+
+{% if c.description %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-body">
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.6;">{{ c.description }}</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat"><div class="stat-value">{{ mappings|length }}</div><div class="stat-label">Mappings</div></div>
+  <div class="stat"><div class="stat-value">{{ objectives|length }}</div><div class="stat-label">Objectives</div></div>
+  <div class="stat"><div class="stat-value">{{ evidence|length }}</div><div class="stat-label">Evidence</div></div>
+  <div class="stat"><div class="stat-value">{{ compensating|length }}</div><div class="stat-label">Compensating</div></div>
+</div>
+
+{% if c.control_question or c.applicability_context %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">Details</div>
+  <div class="card-body">
+    <dl class="control-meta">
+      {% if c.control_question %}<dt>Control Question</dt><dd>{{ c.control_question }}</dd>{% endif %}
+      {% if c.applicability_context %}<dt>Applicability</dt><dd>{{ c.applicability_context }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+
+<!-- Mappings -->
+<div class="card">
+  <div class="card-header">
+    <span>Framework Mappings</span>
+    <span class="badge primary">{{ mappings|length }}</span>
+  </div>
+  <div class="card-body table-wrap">
+    {% if mappings %}
+    <table>
+      <thead>
+        <tr>
+          <th>Framework</th>
+          <th>Mapped ID</th>
+          <th>Title</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in mappings %}
+        <tr>
+          <td><code>{{ m.framework_code }}</code></td>
+          <td><code>{{ m.mapped_control_id or "—" }}</code></td>
+          <td>{{ m.mapped_control_title[:80] if m.mapped_control_title else "—" }}</td>
+          <td>{% if m.mapping_type %}<span class="badge">{{ m.mapping_type }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><p>No framework mappings for this control.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Assessment Objectives -->
+<div class="card">
+  <div class="card-header">
+    <span>Assessment Objectives</span>
+    <span class="badge primary">{{ objectives|length }}</span>
+  </div>
+  <div class="card-body">
+    {% if objectives %}
+    <table>
+      <thead>
+        <tr><th>Code</th><th>Objective</th></tr>
+      </thead>
+      <tbody>
+        {% for o in objectives %}
+        <tr>
+          <td><code>{{ o.objective_code or "—" }}</code></td>
+          <td>{{ o.objective_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><p>No assessment objectives.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Evidence Artifacts -->
+<div class="card">
+  <div class="card-header">
+    <span>Evidence Artifacts</span>
+    <span class="badge primary">{{ evidence|length }}</span>
+  </div>
+  <div class="card-body">
+    {% if evidence %}
+    <table>
+      <thead>
+        <tr><th>ERL #</th><th>Title</th><th>Type</th></tr>
+      </thead>
+      <tbody>
+        {% for a in evidence %}
+        <tr>
+          <td><code>{{ a.erl_number or "—" }}</code></td>
+          <td>{{ a.evidence_title }}</td>
+          <td>{{ a.evidence_type or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><p>No evidence artifacts.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Authoritative Sources -->
+<div class="card">
+  <div class="card-header">
+    <span>Authoritative Sources</span>
+    <span class="badge primary">{{ auth_sources|length }}</span>
+  </div>
+  <div class="card-body">
+    {% if auth_sources %}
+    <table>
+      <thead>
+        <tr><th>Title</th><th>Organization</th><th>Reference</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in auth_sources %}
+        <tr>
+          <td>{{ a.source_title[:100] }}{% if a.source_title|length > 100 %}…{% endif %}</td>
+          <td>{{ a.source_organization or "—" }}</td>
+          <td>{{ a.reference_number or "—" }}</td>
+          <td>{% if a.source_url %}<a href="{{ a.source_url }}" target="_blank">View ↗</a>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><p>No authoritative sources for this control.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Compensating Controls -->
+<div class="card">
+  <div class="card-header">
+    <span>Compensating Controls</span>
+    <span class="badge primary">{{ compensating|length }}</span>
+  </div>
+  <div class="card-body">
+    {% if compensating %}
+    <table>
+      <thead>
+        <tr><th>Compensating ID</th><th>Title</th><th>Type</th><th>Justification</th></tr>
+      </thead>
+      <tbody>
+        {% for cp in compensating %}
+        <tr>
+          <td><code>{{ cp.compensating_control_id or "—" }}</code></td>
+          <td>{{ cp.compensating_control_title[:80] if cp.compensating_control_title else "—" }}</td>
+          <td>{{ cp.compensation_type or "—" }}</td>
+          <td style="max-width:300px;font-size:12px;">{{ cp.justification[:120] if cp.justification else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><p>No compensating controls.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

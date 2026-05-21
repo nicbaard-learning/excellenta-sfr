@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}SFR Browser{% endblock %} — Shared Framework Repository</title>
+  <link rel="stylesheet" href="/static/css/sfr.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="brand">SFR <small>Shared Framework Repository</small></a>
+    <a href="/frameworks">Frameworks</a>
+    <a href="/recommend">Recommend</a>
+    <a href="/compare">Compare</a>
+    <a href="/docs" target="_blank">API Docs</a>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

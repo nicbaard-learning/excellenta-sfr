@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{% if fw %}{{ fw.name }}{% else %}Not Found{% endif %}{% endblock %}
+{% block content %}
+
+{% if error %}
+<div class="error">{{ error }}</div>
+<a href="/frameworks">← Back to Frameworks</a>
+{% else %}
+
+<div class="page-header">
+  <a href="/frameworks" style="font-size:13px;">← Back to Frameworks</a>
+  <div class="fw-header" style="margin-top:12px;">
+    <div class="fw-info">
+      <h1>{{ fw.name }}</h1>
+      <p style="color:var(--text-muted);">
+        <code>{{ fw.code }}</code>
+        {% if fw.category %} · {{ fw.category }}{% endif %}
+        {% if fw.is_scf %}<span class="badge success">SCF Core</span>{% endif %}
+      </p>
+    </div>
+    <div class="fw-meta">
+      {% if fw.publisher %}<div>{{ fw.publisher }}</div>{% endif %}
+      {% if fw.source_url %}<div><a href="{{ fw.source_url }}" target="_blank">Source ↗</a></div>{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if fw.description %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-body">
+    <p style="font-size:13px;color:var(--text-muted);">{{ fw.description }}</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat"><div class="stat-value">{{ controls|length }}</div><div class="stat-label">Controls</div></div>
+  <div class="stat"><div class="stat-value">{{ versions|length }}</div><div class="stat-label">Versions</div></div>
+  <div class="stat"><div class="stat-value">{{ jurisdiction_codes|length }}</div><div class="stat-label">Jurisdictions</div></div>
+  <div class="stat"><div class="stat-value">{{ related|length }}</div><div class="stat-label">Related Frameworks</div></div>
+</div>
+
+{% if related %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">Related Frameworks</div>
+  <div class="card-body">
+    {% for r in related %}
+      <a href="/frameworks/{{ r.id }}" style="display:inline-block;margin-right:12px;margin-bottom:4px;">
+        <code>{{ r.code }}</code> {{ r.name }}
+      </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <span>Controls mapped to {{ fw.code }}</span>
+    <span class="badge primary">{{ controls|length }}</span>
+  </div>
+  <div class="card-body table-wrap">
+    {% if controls %}
+    <table>
+      <thead>
+        <tr>
+          <th>SCF #</th>
+          <th>Title</th>
+          <th>Domain</th>
+          <th>Weight</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in controls %}
+        <tr>
+          <td class="scf-id"><a href="/controls/{{ c.id }}">{{ c.scf_id }}</a></td>
+          <td><a href="/controls/{{ c.id }}">{{ c.title[:100] }}{% if c.title|length > 100 %}…{% endif %}</a></td>
+          <td>{% if c.domain_code %}{{ c.domain_code }}{% else %}—{% endif %}</td>
+          <td>{% if c.relative_weighting %}{{ "%.1f"|format(c.relative_weighting) }}{% else %}—{% endif %}</td>
+          <td><a href="/controls/{{ c.id }}">Detail →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><p>No controls mapped to this framework.</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
