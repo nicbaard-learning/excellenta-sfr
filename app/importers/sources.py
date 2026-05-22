@@ -29,22 +29,38 @@ def import_authoritative_sources(session, wb) -> int:
     count = 0
     sheet_name = getattr(df, "sheet_name", "Authoritative Sources")
 
+    # Track authoritative sources to avoid duplicates (source_title per control)
+    existing_titles: set[tuple[int | None, str]] = set()
+    for a in session.query(AuthoritativeSource).all():
+        existing_titles.add((a.control_id, a.source_title))
+
     for idx, row in df.iterrows():
         control_ref = safe_str(row.get(col_map.get("control_ref"))) if col_map.get("control_ref") else None
         control_id = control_map.get(control_ref) if control_ref else None
+        source_title = safe_str(row.get(col_map.get("title"))) or _find_any_title(row)
+
+        # Skip duplicates
+        if source_title and (control_id, source_title) in existing_titles:
+            continue
 
         source = AuthoritativeSource(
             control_id=control_id,
-            source_title=safe_str(row.get(col_map.get("title"))) or _find_any_title(row),
+            source_title=source_title,
             source_url=safe_str(row.get(col_map.get("url"))) if col_map.get("url") else None,
             source_organization=safe_str(row.get(col_map.get("organization")))
             if col_map.get("organization")
             else None,
             reference_number=safe_str(row.get(col_map.get("reference"))) if col_map.get("reference") else None,
+            # New fields: FDI, STRM URL, Geography
+            focal_document_identifier=safe_str(row.get(col_map.get("fdi"))) if col_map.get("fdi") else None,
+            strm_url=safe_str(row.get(col_map.get("strm_url"))) if col_map.get("strm_url") else None,
+            geography=safe_str(row.get(col_map.get("geography"))) if col_map.get("geography") else None,
             source_sheet=sheet_name,
         )
         session.add(source)
         count += 1
+        if source_title:
+            existing_titles.add((control_id, source_title))
 
     session.flush()
     logger.info("Imported %d authoritative sources", count)
@@ -68,6 +84,16 @@ def _map_columns(df: pd.DataFrame) -> dict[str, str]:
             col_map["organization"] = col
         elif any(x in s for x in ("reference #", "reference number", "ref #", "ref", "document #")):
             col_map["reference"] = col
+        elif any(x in s for x in ("geography", "country", "region")):
+            col_map["geography"] = col
+        elif any(x in s for x in ("focal document identifier", "fdi", "focal document id")):
+            col_map["fdi"] = col
+        elif any(x in s for x in ("set theory relationship mapping", "strm url", "strm pdf")):
+            col_map["strm_url"] = col
+        elif any(x in s for x in ("scf column header", "scf column")):
+            col_map["scf_column"] = col
+        elif any(x in s for x in ("focal document source", "focal doc source", "fds")):
+            col_map["focal_doc_source"] = col
     return col_map
 
 

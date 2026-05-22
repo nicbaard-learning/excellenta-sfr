@@ -12,7 +12,22 @@ class ControlBase(BaseModel):
     control_question: str | None = None
     conformity_cadence: str | None = None
     relative_weighting: float | None = None
+    relative_weight: int | None = None
+    pptdf_applicability: str | None = None
     applicability_context: str | None = None
+    # Firm-size solutions
+    solutions_micro_small: str | None = None
+    solutions_small: str | None = None
+    solutions_medium: str | None = None
+    solutions_large: str | None = None
+    solutions_enterprise: str | None = None
+    # SCR-CMM Maturity levels
+    cmm_level_0: str | None = None
+    cmm_level_1: str | None = None
+    cmm_level_2: str | None = None
+    cmm_level_3: str | None = None
+    cmm_level_4: str | None = None
+    cmm_level_5: str | None = None
 
 
 class ControlResponse(ControlBase):
@@ -33,6 +48,19 @@ class ControlMappingResponse(BaseModel):
     mapped_control_id: str | None = None
     mapped_control_title: str | None = None
     mapping_type: str | None = None
+    strm_type: str | None = None
+
+
+class AuthoritativeSourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    source_title: str
+    source_url: str | None = None
+    source_organization: str | None = None
+    reference_number: str | None = None
+    focal_document_identifier: str | None = None
+    strm_url: str | None = None
+    geography: str | None = None
 
 
 class ControlDetailResponse(ControlResponse):
@@ -40,6 +68,7 @@ class ControlDetailResponse(ControlResponse):
     objective_count: int = 0
     evidence_count: int = 0
     compensating_count: int = 0
+    auth_sources: list[AuthoritativeSourceResponse] = []
 
 
 class AssessmentObjectiveResponse(BaseModel):

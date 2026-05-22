@@ -22,7 +22,7 @@ try:
     from app.database import engine, Base
 
     # ── Register API routers ──────────────────────────────────────────────
-    from app.api import frameworks, controls, compare, recommend, reference  # noqa: E402
+    from app.api import frameworks, controls, compare, recommend, reference, system  # noqa: E402
     from app.ui import router as ui_router  # noqa: E402
     from dotenv import load_dotenv
     import os
@@ -33,13 +33,40 @@ try:
 
     logger = logging.getLogger(__name__)
 
+    # ── Background task: GitHub update check ─────────────────────────────
+    import asyncio
+    from app.services.github_service import check_for_updates
+
+    async def github_update_checker(interval_hours: int = 24):
+        """Background task that checks for SCF updates every N hours."""
+        while True:
+            try:
+                logger.info("Running scheduled GitHub update check...")
+                # Run the sync check in a thread pool to avoid blocking
+                from app.database import SessionLocal
+                def _run_check():
+                    session = SessionLocal()
+                    try:
+                        check_for_updates(session)
+                    finally:
+                        session.close()
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, _run_check)
+                logger.info("GitHub update check completed")
+            except Exception as exc:
+                logger.warning("GitHub update check background task failed: %s", exc)
+            await asyncio.sleep(interval_hours * 3600)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Application lifespan – startup/shutdown hooks."""
         logger.info("Starting SFR – Shared Framework Repository")
         # Create tables if they don't exist (for dev/POC convenience)
         Base.metadata.create_all(bind=engine)
+        # Start background GitHub update checker
+        task = asyncio.create_task(github_update_checker(24))
         yield
+        task.cancel()
         logger.info("Shutting down SFR")
 
     app = FastAPI(
@@ -76,6 +103,7 @@ try:
     app.include_router(compare.router)
     app.include_router(recommend.router)
     app.include_router(reference.router)
+    app.include_router(system.router)
 
     # ── MCP (SSE transport) ──────────────────────────────────────────────
     # Mounts the Model Context Protocol server for AI-agent access.

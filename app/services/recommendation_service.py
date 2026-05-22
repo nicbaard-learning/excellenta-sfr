@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.business_model import BusinessModel
 from app.models.control import Domain
 from app.models.framework import Framework, FrameworkVersion
-from app.models.jurisdiction import Jurisdiction
+from app.models.jurisdiction import FrameworkJurisdiction, Jurisdiction
 
 
 class RecommendationService:
@@ -26,13 +26,14 @@ class RecommendationService:
         domain: str | None = None,
         privacy_context: str | None = None,
         size: str | None = None,
+        firm_size: str | None = None,
+        threat_profile: str | None = None,
         search: str | None = None,
     ) -> dict:
         """Recommend frameworks based on context attributes.
 
-        Uses applicability rules and category hints to suggest relevant frameworks.
-        Falls back to keyword text search (code, name, description, publisher)
-        when junction tables are empty.
+        Returns data-rich compliance blueprints including control details,
+        maturity levels, and firm-size solutions where available.
         """
         query = self.session.query(Framework).filter(Framework.is_scf == False)  # noqa: E712
 
@@ -69,13 +70,69 @@ class RecommendationService:
 
         if business_model:
             filters_applied.append(f"business_model={business_model}")
-            # Filter via applicability_rules
-            query = query.filter(
-                Framework.applicability_rules.any(
-                    attribute_name="business_model",
-                    attribute_value=business_model,
-                )
+
+            from sqlalchemy import or_ as _or
+
+            from app.models.control import Control, Domain
+            from app.models.mapping import ControlMapping
+
+            # Condition 1: via applicability_rules (exact business_model match)
+            rule_condition = Framework.applicability_rules.any(
+                attribute_name="business_model",
+                attribute_value=business_model,
             )
+
+            bm = self.session.query(BusinessModel).filter(
+                BusinessModel.code == business_model
+            ).first()
+
+            conditions = [rule_condition]
+
+            if bm:
+                # Build search keywords from business model code + name
+                keywords = {bm.code}  # e.g. "IAM"
+                for part in bm.name.replace("&", "").split():
+                    part = part.strip()
+                    if len(part) >= 3:
+                        keywords.add(part)
+
+                # Remove overly generic words that would match too broadly
+                generic = {
+                    "management", "service", "services", "provider",
+                    "platform", "software", "technology", "solution",
+                    "vendor", "professional", "security", "data",
+                    "financial", "administration", "system", "systems",
+                }
+                keywords = keywords - generic
+
+                if keywords:
+                    # Match against control titles, SCF IDs, and domain names
+                    match_conditions = []
+                    for kw in keywords:
+                        match_conditions.append(
+                            Control.title.ilike(f"%{kw}%")
+                        )
+                        match_conditions.append(
+                            Control.scf_id.ilike(f"{kw}%")
+                        )
+                        match_conditions.append(
+                            Domain.name.ilike(f"%{kw}%")
+                        )
+                        match_conditions.append(
+                            Domain.code.ilike(f"%{kw}%")
+                        )
+
+                    fw_via_controls = (
+                        self.session.query(ControlMapping.framework_id)
+                        .join(Control, ControlMapping.control_id == Control.id)
+                        .join(Domain, Control.domain_id == Domain.id)
+                        .filter(_or(*match_conditions))
+                        .distinct()
+                        .subquery()
+                    )
+                    conditions.append(Framework.id.in_(fw_via_controls))
+
+            query = query.filter(_or(*conditions))
 
         if privacy_context:
             filters_applied.append(f"privacy_context={privacy_context}")
@@ -86,13 +143,25 @@ class RecommendationService:
                 )
             )
 
-        if size:
-            filters_applied.append(f"size={size}")
+        # Support both size (deprecated) and firm_size (new)
+        effective_size = firm_size or size
+        if effective_size:
+            filters_applied.append(f"size={effective_size}")
             query = query.filter(
                 Framework.applicability_rules.any(
                     attribute_name="size",
-                    attribute_value=size,
+                    attribute_value=effective_size,
                 )
+            )
+
+        if threat_profile:
+            filters_applied.append(f"threat_profile={threat_profile}")
+            # Threat profile filtering via keyword search on framework name/category
+            pattern = f"%{threat_profile}%"
+            query = query.filter(
+                Framework.name.ilike(pattern)
+                | Framework.description.ilike(pattern)
+                | Framework.category.ilike(pattern)
             )
 
         if search:
@@ -107,6 +176,10 @@ class RecommendationService:
 
         frameworks = query.order_by(Framework.code).all()
 
+        # Build data-rich compliance blueprints
+        from app.models.control import Control
+        from app.models.mapping import ControlMapping
+
         results = []
         for fw in frameworks:
             active_ver = (
@@ -117,6 +190,52 @@ class RecommendationService:
                 )
                 .first()
             )
+
+            # Get jurisdictions for this framework
+            jur_codes = [
+                j.code for j in
+                (self.session.query(Jurisdiction)
+                 .join(FrameworkJurisdiction)
+                 .filter(FrameworkJurisdiction.framework_id == fw.id)
+                 .all())
+            ]
+
+            # Get top controls (first 10) with maturity and firm-size data
+            mapped_control_ids = (
+                self.session.query(ControlMapping.control_id)
+                .filter(ControlMapping.framework_id == fw.id)
+                .subquery()
+            )
+            controls = (
+                self.session.query(Control)
+                .filter(Control.id.in_(mapped_control_ids))
+                .order_by(Control.scf_id)
+                .limit(25)
+                .all()
+            )
+
+            top_controls = []
+            for c in controls:
+                tc = {
+                    "scf_id": c.scf_id,
+                    "title": c.title,
+                    "description": c.description[:300] if c.description else None,
+                    "domain_code": c.domain.code if c.domain else None,
+                    "relative_weighting": float(c.relative_weighting) if c.relative_weighting else None,
+                    "cmm_level_0": c.cmm_level_0,
+                    "cmm_level_1": c.cmm_level_1,
+                    "cmm_level_2": c.cmm_level_2,
+                    "cmm_level_3": c.cmm_level_3,
+                    "cmm_level_4": c.cmm_level_4,
+                    "cmm_level_5": c.cmm_level_5,
+                    "solutions_micro_small": c.solutions_micro_small,
+                    "solutions_small": c.solutions_small,
+                    "solutions_medium": c.solutions_medium,
+                    "solutions_large": c.solutions_large,
+                    "solutions_enterprise": c.solutions_enterprise,
+                }
+                top_controls.append(tc)
+
             results.append({
                 "id": fw.id,
                 "code": fw.code,
@@ -124,12 +243,17 @@ class RecommendationService:
                 "category": fw.category,
                 "version_label": active_ver.version_label if active_ver else None,
                 "is_scf": fw.is_scf,
+                "jurisdiction_codes": jur_codes,
+                "control_count": len(controls),
+                "top_controls": top_controls,
             })
 
         return {
             "recommendations": results,
             "total": len(results),
             "applied_filters": filters_applied,
+            "firm_size": effective_size,
+            "threat_profile": threat_profile,
         }
 
     def recommend_by_category(self, category: str) -> dict:

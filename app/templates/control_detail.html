@@ -34,13 +34,15 @@
   <div class="stat"><div class="stat-value">{{ compensating|length }}</div><div class="stat-label">Compensating</div></div>
 </div>
 
-{% if c.control_question or c.applicability_context %}
+{% if c.control_question or c.applicability_context or c.pptdf_applicability %}
 <div class="card" style="margin-bottom:16px;">
   <div class="card-header">Details</div>
   <div class="card-body">
     <dl class="control-meta">
       {% if c.control_question %}<dt>Control Question</dt><dd>{{ c.control_question }}</dd>{% endif %}
       {% if c.applicability_context %}<dt>Applicability</dt><dd>{{ c.applicability_context }}</dd>{% endif %}
+      {% if c.pptdf_applicability %}<dt>PPTDF</dt><dd>{{ c.pptdf_applicability }}</dd>{% endif %}
+      {% if c.relative_weight %}<dt>Relative Weight</dt><dd>{{ c.relative_weight }}</dd>{% endif %}
     </dl>
   </div>
 </div>
@@ -117,20 +119,21 @@
     {% if evidence %}
     <table>
       <thead>
-        <tr><th>ERL #</th><th>Title</th><th>Type</th></tr>
+        <tr><th>ERL #</th><th>Title</th><th>Type</th><th>Description</th></tr>
       </thead>
       <tbody>
         {% for a in evidence %}
         <tr>
           <td><code>{{ a.erl_number or "—" }}</code></td>
-          <td>{{ a.evidence_title }}</td>
+          <td>{{ a.evidence_title[:80] if a.evidence_title else "—" }}</td>
           <td>{{ a.evidence_type or "—" }}</td>
+          <td style="max-width:250px;font-size:12px;">{{ a.evidence_description[:100] if a.evidence_description else "—" }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
     {% else %}
-    <div class="empty"><p>No evidence artifacts.</p></div>
+    <div class="empty"><p>No evidence artifacts for this control.</p></div>
     {% endif %}
   </div>
 </div>
@@ -145,15 +148,15 @@
     {% if auth_sources %}
     <table>
       <thead>
-        <tr><th>Title</th><th>Organization</th><th>Reference</th><th></th></tr>
+        <tr><th>Title</th><th>Organization</th><th>Reference</th><th>URL</th></tr>
       </thead>
       <tbody>
         {% for a in auth_sources %}
         <tr>
-          <td>{{ a.source_title[:100] }}{% if a.source_title|length > 100 %}…{% endif %}</td>
+          <td>{{ a.source_title[:120] }}{% if a.source_title|length > 120 %}…{% endif %}</td>
           <td>{{ a.source_organization or "—" }}</td>
           <td>{{ a.reference_number or "—" }}</td>
-          <td>{% if a.source_url %}<a href="{{ a.source_url }}" target="_blank">View ↗</a>{% else %}—{% endif %}</td>
+          <td>{% if a.source_url %}<a href="{{ a.source_url }}" target="_blank" title="{{ a.source_url }}">View ↗</a>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -161,6 +164,55 @@
     {% else %}
     <div class="empty"><p>No authoritative sources for this control.</p></div>
     {% endif %}
+  </div>
+</div>
+
+<!-- SCR-CMM Maturity Levels Accordion -->
+<div class="card">
+  <div class="card-header">
+    <span>SCR-CMM Maturity Levels</span>
+  </div>
+  <div class="card-body">
+    {% set cmm_levels = [
+      ("Level 0 — Incomplete", c.cmm_level_0),
+      ("Level 1 — Performed", c.cmm_level_1),
+      ("Level 2 — Managed", c.cmm_level_2),
+      ("Level 3 — Defined", c.cmm_level_3),
+      ("Level 4 — Quantitatively Managed", c.cmm_level_4),
+      ("Level 5 — Optimizing", c.cmm_level_5),
+    ] %}
+    <div class="maturity-grid">
+      {% for label, value in cmm_levels %}
+      <div class="maturity-item {% if value %}has-data{% else %}no-data{% endif %}">
+        <div class="maturity-label">{{ label }}</div>
+        <div class="maturity-value">{% if value %}{{ value[:200] }}{% if value|length > 200 %}…{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Firm-Size Solutions Grid -->
+<div class="card">
+  <div class="card-header">
+    <span>Possible Solutions &amp; Considerations by Firm Size</span>
+  </div>
+  <div class="card-body">
+    {% set firm_sizes = [
+      ("Micro-Small", c.solutions_micro_small),
+      ("Small", c.solutions_small),
+      ("Medium", c.solutions_medium),
+      ("Large", c.solutions_large),
+      ("Enterprise", c.solutions_enterprise),
+    ] %}
+    <div class="firm-size-grid">
+      {% for label, value in firm_sizes %}
+      <div class="firm-size-item {% if value %}has-data{% else %}no-data{% endif %}">
+        <div class="firm-size-label">{{ label }}</div>
+        <div class="firm-size-value">{% if value %}{{ value[:200] }}{% if value|length > 200 %}…{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
 </div>
 

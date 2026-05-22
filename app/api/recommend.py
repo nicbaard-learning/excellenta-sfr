@@ -23,7 +23,13 @@ def recommend_frameworks(
     req: FrameworkRecommendationRequest,
     session: Session = Depends(get_session),
 ):
-    """Get framework recommendations based on vendor/profile attributes."""
+    """Get framework recommendations based on vendor/profile attributes.
+
+    Returns data-rich compliance blueprints with:
+    - Framework metadata and jurisdiction mappings
+    - Top controls with maturity levels (SCR-CMM) and firm-size solutions
+    - Applied filter summary
+    """
     svc = RecommendationService(session)
     result = svc.recommend_by_context(
         category=req.category,
@@ -32,6 +38,8 @@ def recommend_frameworks(
         domain=req.domain,
         privacy_context=req.privacy_context,
         size=req.size,
+        firm_size=req.firm_size,
+        threat_profile=req.threat_profile,
     )
     return FrameworkRecommendationResponse(**result)
 

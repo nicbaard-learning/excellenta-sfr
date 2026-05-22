@@ -42,7 +42,33 @@
           </select>
         </div>
       </div>
-      <!-- Row 2: keyword search -->
+      <!-- Row 2: Firm Size & Threat Profile -->
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="firm_size">Firm Size</label>
+          <select name="firm_size" id="firm_size">
+            <option value="">— Any —</option>
+            <option value="micro" {% if selected_firm_size == 'micro' %}selected{% endif %}>Micro (1-10)</option>
+            <option value="small" {% if selected_firm_size == 'small' %}selected{% endif %}>Small (11-50)</option>
+            <option value="medium" {% if selected_firm_size == 'medium' %}selected{% endif %}>Medium (51-500)</option>
+            <option value="large" {% if selected_firm_size == 'large' %}selected{% endif %}>Large (501-5000)</option>
+            <option value="enterprise" {% if selected_firm_size == 'enterprise' %}selected{% endif %}>Enterprise (5000+)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="threat_profile">Threat Profile</label>
+          <select name="threat_profile" id="threat_profile">
+            <option value="">— Any —</option>
+            <option value="critical infrastructure" {% if selected_threat_profile == 'critical infrastructure' %}selected{% endif %}>Critical Infrastructure</option>
+            <option value="healthcare" {% if selected_threat_profile == 'healthcare' %}selected{% endif %}>Healthcare</option>
+            <option value="financial" {% if selected_threat_profile == 'financial' %}selected{% endif %}>Financial Services</option>
+            <option value="government" {% if selected_threat_profile == 'government' %}selected{% endif %}>Government</option>
+            <option value="retail" {% if selected_threat_profile == 'retail' %}selected{% endif %}>Retail / E-commerce</option>
+            <option value="technology" {% if selected_threat_profile == 'technology' %}selected{% endif %}>Technology</option>
+          </select>
+        </div>
+      </div>
+      <!-- Row 3: keyword search -->
       <div style="margin-top:12px;display:grid;grid-template-columns:1fr;gap:8px;">
         <div class="form-group" style="margin:0;">
           <label for="search">Keyword Search</label>

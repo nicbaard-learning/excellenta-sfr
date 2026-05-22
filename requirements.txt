@@ -23,5 +23,8 @@ mcp==1.27.1
 # Pin starlette to avoid 1.0.0 which removes on_startup/on_shutdown from Router
 starlette==0.52.1
 
+# HTTP / API
+httpx==0.27.0
+
 # Utilities
 python-dotenv==1.0.1

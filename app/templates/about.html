@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}About{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>About the Shared Framework Repository</h1>
+  <p>A centralized compliance data service for security, privacy, and risk frameworks</p>
+</div>
+
+<!-- ── Description Section ── -->
+<div class="card">
+  <div class="card-body about-description">
+    <p>
+      The <strong>Shared Framework Repository (SFR)</strong> centralizes, normalizes, and exposes
+      metadata about the world's most widely used security, privacy, and risk compliance frameworks.
+      It is built from the canonical <strong>Secure Controls Framework (SCF)</strong> workbook,
+      which cross-maps thousands of controls across 170+ global frameworks.
+    </p>
+    <p>
+      SFR is designed for use in <strong>Third-Party Risk Management (TPRM)</strong>,
+      <strong>Governance, Risk &amp; Compliance (GRC)</strong>, and automated compliance tooling.
+      Whether you're assessing a vendor, comparing frameworks, or building compliance automation,
+      SFR provides the canonical data layer you need.
+    </p>
+  </div>
+</div>
+
+<!-- ── Key Stats Cards ── -->
+<div class="page-header" style="margin-top: 28px;">
+  <h2>Repository at a Glance</h2>
+</div>
+
+<div class="about-stats-grid">
+  <div class="about-stat-card stat-controls">
+    <div class="about-stat-icon">📋</div>
+    <div class="about-stat-value">{{ stats.total_controls }}</div>
+    <div class="about-stat-label">Canonical Controls</div>
+  </div>
+  <div class="about-stat-card stat-frameworks">
+    <div class="about-stat-icon">🏛️</div>
+    <div class="about-stat-value">{{ stats.total_frameworks }}</div>
+    <div class="about-stat-label">Frameworks</div>
+  </div>
+  <div class="about-stat-card stat-mappings">
+    <div class="about-stat-icon">🔗</div>
+    <div class="about-stat-value">{{ stats.total_mappings }}</div>
+    <div class="about-stat-label">Cross-Mappings</div>
+  </div>
+  <div class="about-stat-card stat-objectives">
+    <div class="about-stat-icon">🎯</div>
+    <div class="about-stat-value">{{ stats.total_objectives }}</div>
+    <div class="about-stat-label">Assessment Objectives</div>
+  </div>
+  <div class="about-stat-card stat-evidence">
+    <div class="about-stat-icon">📎</div>
+    <div class="about-stat-value">{{ stats.total_evidence }}</div>
+    <div class="about-stat-label">Evidence Artifacts</div>
+  </div>
+  <div class="about-stat-card stat-threats">
+    <div class="about-stat-icon">⚠️</div>
+    <div class="about-stat-value">{{ stats.total_threats }}</div>
+    <div class="about-stat-label">Threats</div>
+  </div>
+  <div class="about-stat-card stat-risks">
+    <div class="about-stat-icon">🛡️</div>
+    <div class="about-stat-value">{{ stats.total_risks }}</div>
+    <div class="about-stat-label">Risks</div>
+  </div>
+  <div class="about-stat-card stat-jurisdictions">
+    <div class="about-stat-icon">🌍</div>
+    <div class="about-stat-value">{{ stats.total_jurisdictions }}</div>
+    <div class="about-stat-label">Jurisdictions</div>
+  </div>
+</div>
+
+<!-- ── Detailed Data Breakdown ── -->
+<div class="page-header" style="margin-top: 28px;">
+  <h2>Data Breakdown</h2>
+</div>
+
+<div class="card">
+  <div class="card-body table-wrap">
+    <table class="about-detail-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Count</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="about-entity">Frameworks</span></td>
+          <td><strong>{{ stats.total_frameworks }}</strong></td>
+          <td>Compliance frameworks (NIST, ISO, PCI, FedRAMP, etc.)</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">SCF Framework</span></td>
+          <td><strong>{{ stats.scf_count }}</strong></td>
+          <td>The canonical Secure Controls Framework v2026.1</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Controls</span></td>
+          <td><strong>{{ stats.total_controls }}</strong></td>
+          <td>Canonical SCF control definitions with firm-size solutions, CMM maturity levels, and relative weighting</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Control Domains</span></td>
+          <td><strong>{{ stats.total_domains }}</strong></td>
+          <td>SCF domain groupings (AC, AU, IA, IR, etc.)</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Control Mappings</span></td>
+          <td><strong>{{ stats.total_mappings }}</strong></td>
+          <td>Cross-framework control relationships with STRM type annotations</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Assessment Objectives</span></td>
+          <td><strong>{{ stats.total_objectives }}</strong></td>
+          <td>Assessment objective statements for audit workflows</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Evidence Artifacts</span></td>
+          <td><strong>{{ stats.total_evidence }}</strong></td>
+          <td>Evidence request line items for audit readiness</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Compensating Controls</span></td>
+          <td><strong>{{ stats.total_compensating }}</strong></td>
+          <td>Alternative controls for risk mitigation</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Authoritative Sources</span></td>
+          <td><strong>{{ stats.total_auth_sources }}</strong></td>
+          <td>Focal Document Identifiers (FDI) with STRM URLs and geography</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Jurisdictions</span></td>
+          <td><strong>{{ stats.total_jurisdictions }}</strong></td>
+          <td>Countries and regulatory regions</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Business Models</span></td>
+          <td><strong>{{ stats.total_business_models }}</strong></td>
+          <td>TPRM vendor categories (SaaS, IaaS, MSP, IAM, etc.)</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Applicability Rules</span></td>
+          <td><strong>{{ stats.total_applicability_rules }}</strong></td>
+          <td>Framework-to-business-model applicability mappings</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Threat Catalog</span></td>
+          <td><strong>{{ stats.total_threats }}</strong></td>
+          <td>Threat groupings with materiality considerations</td>
+        </tr>
+        <tr>
+          <td><span class="about-entity">Risk Catalog</span></td>
+          <td><strong>{{ stats.total_risks }}</strong></td>
+          <td>Risk entries with NIST CSF function mappings</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Key Features Section ── -->
+<div class="page-header" style="margin-top: 28px;">
+  <h2>Capabilities</h2>
+</div>
+
+<div class="about-features">
+  <div class="about-feature-card">
+    <div class="about-feature-icon">🎯</div>
+    <div class="about-feature-title">Framework Recommendations</div>
+    <div class="about-feature-desc">Find relevant frameworks by jurisdiction, business model, firm size, threat profile, or search keywords.</div>
+  </div>
+  <div class="about-feature-card">
+    <div class="about-feature-icon">⚖️</div>
+    <div class="about-feature-title">Framework Comparison</div>
+    <div class="about-feature-desc">Compare any two frameworks to identify overlapping controls, unique gaps, and common control sets.</div>
+  </div>
+  <div class="about-feature-card">
+    <div class="about-feature-icon">🔗</div>
+    <div class="about-feature-title">Cross-Framework Mappings</div>
+    <div class="about-feature-desc">41,000+ pre-built control mappings with Set Theory Relationship Mapping (STRM) annotations.</div>
+  </div>
+  <div class="about-feature-card">
+    <div class="about-feature-icon">🧩</div>
+    <div class="about-feature-title">MCP Integration</div>
+    <div class="about-feature-desc">Model Context Protocol (MCP) tools for AI-driven compliance reasoning and automation.</div>
+  </div>
+  <div class="about-feature-card">
+    <div class="about-feature-icon">📋</div>
+    <div class="about-feature-title">Audit Readiness</div>
+    <div class="about-feature-desc">Assessment objectives, evidence artifacts, and compensating controls for audit workflows.</div>
+  </div>
+  <div class="about-feature-card">
+    <div class="about-feature-icon">📡</div>
+    <div class="about-feature-title">REST API</div>
+    <div class="about-feature-desc">Full OpenAPI-documented REST API for programmatic access at <code>/docs</code>.</div>
+  </div>
+</div>
+
+<!-- ── Data Source ── -->
+<div class="page-header" style="margin-top: 28px;">
+  <h2>Data Source</h2>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <p>All data is loaded from the canonical <strong>Secure Controls Framework (SCF) 2026.1</strong> workbook, published by the Secure Controls Framework Council. The SCF provides:</p>
+    <ul style="margin-top: 8px; padding-left: 20px; line-height: 1.8;">
+      <li>A master catalog of controls mapped to 170+ global frameworks</li>
+      <li>Firm-size solution guidance (micro to enterprise)</li>
+      <li>SCR-CMM maturity level definitions (levels 0–5)</li>
+      <li>Relative control weighting for prioritization</li>
+      <li>PPTDF applicability classification (People, Process, Technology, Data, Facility)</li>
+      <li>Threat and risk catalogs with materiality considerations</li>
+    </ul>
+    <p style="margin-top: 12px;">
+      <a href="https://securecontrolsframework.com" target="_blank" rel="noopener">Learn more about SCF →</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

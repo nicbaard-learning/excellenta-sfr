@@ -1,4 +1,4 @@
-"""Import Run model – tracks workbook import executions."""
+"""Import Run model – tracks workbook import executions and GitHub update checks."""
 
 from datetime import datetime
 
@@ -26,6 +26,14 @@ class ImportRun(Base):
     error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Errors encountered")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # GitHub update tracking (system-level, stored on the latest import run)
+    last_checked_github_commit: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Last checked GitHub commit SHA"
+    )
+    latest_github_tag: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Latest GitHub release tag (e.g. 2026.1.1)"
+    )
 
     def __repr__(self) -> str:
         return f"<ImportRun id={self.id} file={self.filename!r} status={self.status!r}>"

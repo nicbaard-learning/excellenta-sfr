@@ -42,6 +42,7 @@ class ControlService:
                 "mapped_control_id": mapping.mapped_control_id,
                 "mapped_control_title": mapping.mapped_control_title,
                 "mapping_type": mapping.mapping_type,
+                "strm_type": mapping.strm_type,
             }
             for mapping, framework in mappings
         ]
@@ -94,9 +95,24 @@ class ControlService:
             "control_question": control.control_question,
             "conformity_cadence": control.conformity_cadence,
             "relative_weighting": control.relative_weighting,
+            "relative_weight": control.relative_weight,
+            "pptdf_applicability": control.pptdf_applicability,
             "applicability_context": control.applicability_context,
             "domain_code": domain.code if domain else None,
             "domain_name": domain.name if domain else None,
+            # Firm-size solutions
+            "solutions_micro_small": control.solutions_micro_small,
+            "solutions_small": control.solutions_small,
+            "solutions_medium": control.solutions_medium,
+            "solutions_large": control.solutions_large,
+            "solutions_enterprise": control.solutions_enterprise,
+            # SCR-CMM Maturity levels
+            "cmm_level_0": control.cmm_level_0,
+            "cmm_level_1": control.cmm_level_1,
+            "cmm_level_2": control.cmm_level_2,
+            "cmm_level_3": control.cmm_level_3,
+            "cmm_level_4": control.cmm_level_4,
+            "cmm_level_5": control.cmm_level_5,
             "created_at": control.created_at,
             "updated_at": control.updated_at,
             "mappings": self.get_mappings(control_id),

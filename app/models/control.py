@@ -79,11 +79,54 @@ class Control(Base):
     relative_weighting: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2), nullable=True, comment="Relative Control Weighting"
     )
+    relative_weight: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Relative weight integer value"
+    )
+    pptdf_applicability: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="PPTDF Applicability classification"
+    )
     evidence_request_list_refs: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Evidence Request List (ERL) # references, comma-separated"
     )
     applicability_context: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Free-text applicability / context notes"
+    )
+
+    # Firm-size solution columns (from Possible Solutions & Considerations)
+    solutions_micro_small: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Solutions for Micro-Small organizations"
+    )
+    solutions_small: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Solutions for Small organizations"
+    )
+    solutions_medium: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Solutions for Medium organizations"
+    )
+    solutions_large: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Solutions for Large organizations"
+    )
+    solutions_enterprise: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Solutions for Enterprise organizations"
+    )
+
+    # SCR-CMM Maturity level columns
+    cmm_level_0: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="SCR-CMM Level 0 - Incomplete"
+    )
+    cmm_level_1: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="SCR-CMM Level 1 - Performed"
+    )
+    cmm_level_2: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="SCR-CMM Level 2 - Managed"
+    )
+    cmm_level_3: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="SCR-CMM Level 3 - Defined"
+    )
+    cmm_level_4: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="SCR-CMM Level 4 - Quantitatively Managed"
+    )
+    cmm_level_5: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="SCR-CMM Level 5 - Optimizing"
     )
     source_sheet: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="Workbook sheet name"

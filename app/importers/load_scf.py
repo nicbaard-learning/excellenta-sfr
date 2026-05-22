@@ -27,6 +27,8 @@ from app.importers.frameworks import import_frameworks
 from app.importers.mappings import import_mappings
 from app.importers.objectives import import_assessment_objectives
 from app.importers.sources import import_authoritative_sources
+from app.importers.threats import import_threats
+from app.importers.risks import import_risks
 from app.models.import_run import ImportRun
 
 logger = logging.getLogger(__name__)
@@ -162,6 +164,22 @@ def load_workbook(filepath: str) -> None:
             app_counts.get("privacy_context", 0),
             app_counts.get("size", 0),
         )
+
+        # ---- Phase 11: Threat Catalog ----
+        logger.info("─" * 50)
+        logger.info("Phase 11: Importing threat catalog...")
+        threat_count = import_threats(session, wb)
+        sheets_processed.append("Threat Catalog")
+        total_loaded += threat_count
+        logger.info("  → %d threats", threat_count)
+
+        # ---- Phase 12: Risk Catalog ----
+        logger.info("─" * 50)
+        logger.info("Phase 12: Importing risk catalog...")
+        risk_count = import_risks(session, wb)
+        sheets_processed.append("Risk Catalog")
+        total_loaded += risk_count
+        logger.info("  → %d risks", risk_count)
 
         # ---- Finalise ----
         wb.close()

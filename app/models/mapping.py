@@ -2,10 +2,20 @@
 
 from datetime import datetime
 
+import enum
+
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+class STRMType(str, enum.Enum):
+    """Set Theory Relationship Mapping types."""
+    EQUAL = "EQUAL"
+    SUBSET_OF = "SUBSET OF"
+    SUPERSET_OF = "SUPERSET OF"
+    INTERSECTS_WITH = "INTERSECTS WITH"
 
 
 class ControlMapping(Base):
@@ -28,6 +38,10 @@ class ControlMapping(Base):
     )
     mapping_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True, default="equivalent", comment="equivalent, related, broader, narrower"
+    )
+    strm_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
+        comment="Set Theory Relationship Mapping type: EQUAL, SUBSET OF, SUPERSET OF, INTERSECTS WITH"
     )
     source_sheet: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="Workbook sheet name this was imported from"
@@ -62,6 +76,17 @@ class AuthoritativeSource(Base):
     source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reference_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Focal Document Identifier (FDI) – unique slug from the Authoritative Sources sheet
+    focal_document_identifier: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Focal Document Identifier (FDI) / STRM slug"
+    )
+    # Set Theory Relationship Mapping URL
+    strm_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="Set Theory Relationship Mapping PDF URL"
+    )
+    geography: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Geographic region from the Authoritative Sources sheet"
+    )
     source_sheet: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

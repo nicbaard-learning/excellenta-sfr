@@ -13,11 +13,36 @@ from app.models.evidence import EvidenceArtifact
 logger = logging.getLogger(__name__)
 
 
+def _parse_control_mappings(raw: str) -> list[str]:
+    """Parse the SCF Control Mappings column value into a list of SCF IDs.
+
+    Handles:
+    - Newline-separated IDs (e.g. 'VPM-03\\nVPM-05')
+    - Comma-separated IDs (e.g. 'VPM-03, VPM-05')
+    - Mixed newline+comma separators
+    - Whitespace trimming
+    - Empty/invalid entries are filtered out
+    """
+    if not raw or not raw.strip():
+        return []
+
+    # First split by newlines (both \n and literal newlines in the cell)
+    parts = []
+    for line in raw.split("\n"):
+        # Then split each line by commas
+        for item in line.split(","):
+            cleaned = item.strip()
+            if cleaned:
+                parts.append(cleaned)
+    return parts
+
+
 def import_evidence(session, wb) -> int:
     """Load evidence artifacts from the 'Evidence Request List 2026.1' sheet.
 
     The Evidence sheet links to controls via the 'SCF Control Mappings' column,
-    which contains SCF #s separated by newlines (e.g. 'GOV-01\\nPRI-01').
+    which contains SCF #s separated by newlines and/or commas
+    (e.g. 'VPM-03\\nVPM-05' or 'VPM-03, VPM-05').
     Each evidence row may map to multiple controls.
     """
     df = load_sheet_dataframe(wb, "Evidence Request List 2026.1")
@@ -68,8 +93,8 @@ def import_evidence(session, wb) -> int:
         evidence_title = safe_str(row.get(title_col)) if title_col else None
         evidence_description = safe_str(row.get(desc_col)) if desc_col else None
 
-        # Parse the SCF Control Mappings column: multiple SCF IDs separated by newlines
-        scf_ids = [s.strip() for s in raw_mappings.split("\n") if s.strip()]
+        # Parse the SCF Control Mappings column: split on newlines AND commas
+        scf_ids = _parse_control_mappings(raw_mappings)
 
         for scf_id in scf_ids:
             control_id = control_map.get(scf_id)
@@ -79,6 +104,7 @@ def import_evidence(session, wb) -> int:
 
             # Check for duplicate (control_id, erl_number) pair
             if erl_number and (control_id, erl_number) in existing_pairs:
+                skipped_duplicate += 1
                 continue
 
             artifact = EvidenceArtifact(
@@ -99,6 +125,8 @@ def import_evidence(session, wb) -> int:
         logger.info("  Evidence rows with no SCF Control Mappings: %d", skipped_no_scf)
     if skipped_unmatched:
         logger.info("  SCF IDs in mappings that did not match any control: %d", skipped_unmatched)
+    if skipped_duplicate:
+        logger.info("  Duplicate evidence entries skipped: %d", skipped_duplicate)
     logger.info("Imported %d evidence artifacts", count)
     return count
 

@@ -10,3 +10,5 @@ from app.models.jurisdiction import Jurisdiction, FrameworkJurisdiction  # noqa:
 from app.models.business_model import BusinessModel  # noqa: F401
 from app.models.applicability import FrameworkApplicabilityRule  # noqa: F401
 from app.models.import_run import ImportRun  # noqa: F401
+from app.models.threat import Threat, ThreatControlLink  # noqa: F401
+from app.models.risk import Risk, RiskControlLink  # noqa: F401

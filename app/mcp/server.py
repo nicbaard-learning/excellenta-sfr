@@ -68,8 +68,14 @@ def get_applicable_frameworks(
     domain: str | None = None,
     privacy_context: str | None = None,
     size: str | None = None,
+    firm_size: str | None = None,
+    threat_profile: str | None = None,
 ) -> dict:
     """Recommend frameworks matching the provided context.
+
+    Returns data-rich compliance blueprints including framework metadata,
+    jurisdiction mappings, top controls with maturity levels (SCR-CMM),
+    and firm-size solutions.
 
     Args:
         category: Framework category (e.g. "international", "industry", "regulatory").
@@ -77,11 +83,13 @@ def get_applicable_frameworks(
         jurisdiction: Jurisdiction code or name (e.g. "ZA", "US", "EU").
         domain: SCF domain code or name (e.g. "AC", "AU", "IA").
         privacy_context: Privacy-context flag (e.g. "privacy", "security").
-        size: Organisation size (e.g. "small", "medium", "large").
+        size: Organisation size (deprecated, use firm_size).
+        firm_size: Organisation size (e.g. "micro", "small", "medium", "large", "enterprise").
+        threat_profile: Threat profile / sector (e.g. "healthcare", "financial", "government").
 
     Returns:
-        A dict with "recommendations" (list of frameworks with id/code/name/category),
-        "total" count, and "applied_filters" summary.
+        A dict with "recommendations" (list of framework blueprints),
+        "total" count, "applied_filters" summary, and context metadata.
     """
     session = _get_session()
     try:
@@ -93,6 +101,8 @@ def get_applicable_frameworks(
             domain=domain,
             privacy_context=privacy_context,
             size=size,
+            firm_size=firm_size,
+            threat_profile=threat_profile,
         )
         return result
     except Exception as exc:

@@ -25,6 +25,44 @@ templates = Jinja2Templates(directory="app/templates")
 router = APIRouter(tags=["UI"])
 
 
+@router.get("/about")
+async def about(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """About page with repository stats and description."""
+    from sqlalchemy import text
+
+    queries = {
+        "total_controls": "SELECT COUNT(*) FROM controls",
+        "total_frameworks": "SELECT COUNT(*) FROM frameworks",
+        "scf_count": "SELECT COUNT(*) FROM frameworks WHERE is_scf",
+        "total_mappings": "SELECT COUNT(*) FROM control_mappings",
+        "total_domains": "SELECT COUNT(*) FROM domains",
+        "total_objectives": "SELECT COUNT(*) FROM assessment_objectives",
+        "total_evidence": "SELECT COUNT(*) FROM evidence_artifacts",
+        "total_compensating": "SELECT COUNT(*) FROM compensating_control_links",
+        "total_auth_sources": "SELECT COUNT(*) FROM authoritative_sources",
+        "total_jurisdictions": "SELECT COUNT(*) FROM jurisdictions",
+        "total_business_models": "SELECT COUNT(*) FROM business_models",
+        "total_applicability_rules": "SELECT COUNT(*) FROM framework_applicability_rules",
+        "total_threats": "SELECT COUNT(*) FROM threats",
+        "total_risks": "SELECT COUNT(*) FROM risks",
+    }
+
+    stats = {}
+    for key, q in queries.items():
+        try:
+            stats[key] = session.execute(text(q)).scalar() or 0
+        except Exception:
+            stats[key] = 0
+
+    return templates.TemplateResponse(
+        "about.html",
+        {"request": request, "stats": stats},
+    )
+
+
 @router.get("/")
 async def index():
     """Redirect to the framework list."""
@@ -149,9 +187,24 @@ async def control_detail(
         "control_question": ctrl.control_question,
         "conformity_cadence": ctrl.conformity_cadence,
         "relative_weighting": float(ctrl.relative_weighting) if ctrl.relative_weighting else None,
+        "relative_weight": ctrl.relative_weight,
+        "pptdf_applicability": ctrl.pptdf_applicability,
         "applicability_context": ctrl.applicability_context,
         "domain_code": ctrl.domain.code if ctrl.domain else None,
         "domain_name": ctrl.domain.name if ctrl.domain else None,
+        # Firm-size solutions
+        "solutions_micro_small": ctrl.solutions_micro_small,
+        "solutions_small": ctrl.solutions_small,
+        "solutions_medium": ctrl.solutions_medium,
+        "solutions_large": ctrl.solutions_large,
+        "solutions_enterprise": ctrl.solutions_enterprise,
+        # SCR-CMM Maturity levels
+        "cmm_level_0": ctrl.cmm_level_0,
+        "cmm_level_1": ctrl.cmm_level_1,
+        "cmm_level_2": ctrl.cmm_level_2,
+        "cmm_level_3": ctrl.cmm_level_3,
+        "cmm_level_4": ctrl.cmm_level_4,
+        "cmm_level_5": ctrl.cmm_level_5,
     }
 
     # Map objectives to dicts
@@ -198,6 +251,8 @@ async def recommend_frameworks(
     jurisdiction: str | None = Query(None),
     business_model: str | None = Query(None),
     category: str | None = Query(None),
+    firm_size: str | None = Query(None),
+    threat_profile: str | None = Query(None),
     search: str | None = Query(None),
     session: Session = Depends(get_session),
 ):
@@ -208,7 +263,7 @@ async def recommend_frameworks(
     business_models = rec_svc.list_business_models()
     categories = rec_svc.list_categories()
 
-    has_query = bool(jurisdiction or business_model or category or search)
+    has_query = bool(jurisdiction or business_model or category or firm_size or threat_profile or search)
     recommendations = None
     applied_filters = []
     recommended_ids = set()
@@ -216,6 +271,8 @@ async def recommend_frameworks(
     selected_jurisdiction = jurisdiction
     selected_business_model = business_model
     selected_category = category
+    selected_firm_size = firm_size
+    selected_threat_profile = threat_profile
     selected_search = search
 
     if has_query:
@@ -224,6 +281,8 @@ async def recommend_frameworks(
                 jurisdiction=jurisdiction,
                 business_model=business_model,
                 category=category,
+                firm_size=firm_size,
+                threat_profile=threat_profile,
                 search=search,
             )
             recommendations = result["recommendations"]
@@ -244,6 +303,8 @@ async def recommend_frameworks(
             "selected_jurisdiction": selected_jurisdiction,
             "selected_business_model": selected_business_model,
             "selected_category": selected_category,
+            "selected_firm_size": selected_firm_size,
+            "selected_threat_profile": selected_threat_profile,
             "selected_search": selected_search,
             "recommendations": recommendations,
             "applied_filters": applied_filters,
