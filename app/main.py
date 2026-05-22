@@ -93,6 +93,16 @@ try:
         allow_headers=["*"],
     )
 
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    class ForceConnectionClose(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            response.headers["Connection"] = "close"
+            return response
+
+    app.add_middleware(ForceConnectionClose)
+
     # ── Static files ──────────────────────────────────────────────────────
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
