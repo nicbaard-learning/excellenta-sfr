@@ -1,10 +1,5 @@
-
 from __future__ import annotations
 
-import os
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
 """MCP (Model Context Protocol) server for the SFR Shared Framework Repository.
 
 Provides AI-agent-friendly tools over the existing repository logic.
@@ -205,20 +200,18 @@ def get_framework_controls(
     framework_name: str | None = None,
     limit: int | None = 100,
 ) -> dict:
-    """Get controls mapped to a framework.
+    """List controls for a framework.
 
     Args:
         framework_id: Internal numeric framework ID.
-        framework_name: Natural framework name (e.g. "ISO 27001", "PCI-DSS", "NIST CSF").
-        limit: Maximum number of controls to return (default 100, max 500).
+        framework_name: Natural framework name (e.g. "ISO 27001", "PCI-DSS").
+        limit: Maximum number of controls to return (default 100).
 
     Returns:
-        A list of controls with scf_id, title, description, domain, and principle info.
+        Dict with framework info and list of controls.
     """
     if not framework_id and not framework_name:
         return {"error": "Provide either framework_id or framework_name."}
-
-    limit = min(limit, 500) if limit else 100
 
     session = _get_session()
     try:
@@ -229,11 +222,12 @@ def get_framework_controls(
         fw_svc = FrameworkService(session)
         fw = fw_svc.get_framework(resolved_id)
         if not fw:
-            return {"error": f"Framework with id {resolved_id} not found."}
+            return {"error": f"Framework with id {resolved_id} not found in database."}
 
-        controls = fw_svc.get_controls_for_framework(resolved_id)
+        ctrl_svc = ControlService(session)
+        controls = ctrl_svc.get_controls_for_framework(resolved_id)
+        limited = controls[: limit] if limit else controls
 
-        limited = controls[:limit]
         return {
             "framework_id": resolved_id,
             "framework_code": fw.code,
@@ -315,7 +309,6 @@ def compare_frameworks(
 
         if mode == "intersection":
             result = comp_svc.intersection(ids)
-            # Convert ORM objects to dicts
             result["common_controls"] = [
                 {
                     "id": c.id,
@@ -356,8 +349,6 @@ def compare_frameworks(
 
         elif mode == "common_controls":
             result = comp_svc.common_control_set(ids)
-            # The common_control_set already returns dicts with control + mappings
-            # But the "control" key has ORM objects - let's convert them
             for item in result["controls"]:
                 ctrl = item["control"]
                 item["control"] = {
@@ -389,26 +380,6 @@ def create_sse_app():
 
     The MCP client connects via GET /mcp/sse and sends messages via POST /mcp/messages.
     """
-    # --- API Key Auth Middleware ---
-    API_KEY = os.environ.get("MCP_API_KEY")
-    class APIKeyAuthMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next):
-            # Only protect /mcp endpoints
-            if request.url.path.startswith("/mcp"):
-                auth = request.headers.get("authorization")
-                if not auth or not auth.lower().startswith("bearer "):
-                    return JSONResponse({"error": "Missing or invalid Authorization header"}, status_code=401)
-                token = auth.split(" ", 1)[1]
-                if not API_KEY or token != API_KEY:
-                    return JSONResponse({"error": "Invalid API key"}, status_code=403)
-            return await call_next(request)
-
-    # --- Disable Host Header Check Middleware ---
-    class DisableHostCheckMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request, call_next):
-            # Remove host header check by always allowing
-            return await call_next(request)
-
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.cors import CORSMiddleware
@@ -427,8 +398,6 @@ def create_sse_app():
                 allow_methods=["*"],
                 allow_headers=["*"],
             ),
-            Middleware(DisableHostCheckMiddleware),
-            Middleware(APIKeyAuthMiddleware),
         ],
     )
 
