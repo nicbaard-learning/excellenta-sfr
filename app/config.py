@@ -24,7 +24,31 @@ class Settings(BaseSettings):
 
     # ── MCP ────────────────────────────────────────────────────────────
     mcp_api_key: str = ""
-    
+
+    # Allowed Host header values for the MCP transport (DNS rebinding protection).
+    # Comma-separated list; set via the MCP_ALLOWED_HOSTS env var.
+    # Supports exact hostnames and port-wildcard patterns like "localhost:*".
+    mcp_allowed_hosts: str = (
+        "127.0.0.1,127.0.0.1:*,localhost,localhost:*,"
+        "[::1],[::1]:*,excellenta-sfr.onrender.com"
+    )
+
+    @property
+    def mcp_allowed_hosts_list(self) -> list[str]:
+        """Parse the comma-separated MCP_ALLOWED_HOSTS into a list."""
+        return [h.strip() for h in self.mcp_allowed_hosts.split(",") if h.strip()]
+
+    # Allowed Origin header values for the MCP transport (DNS rebinding protection).
+    # Comma-separated list; set via the MCP_ALLOWED_ORIGINS env var.
+    mcp_allowed_origins: str = (
+        "http://127.0.0.1,http://127.0.0.1:*,http://localhost,http://localhost:*,"
+        "http://[::1],http://[::1]:*,https://excellenta-sfr.onrender.com"
+    )
+
+    @property
+    def mcp_allowed_origins_list(self) -> list[str]:
+        """Parse the comma-separated MCP_ALLOWED_ORIGINS into a list."""
+        return [o.strip() for o in self.mcp_allowed_origins.split(",") if o.strip()]
 
 
 settings = Settings()

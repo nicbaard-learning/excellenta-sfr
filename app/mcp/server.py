@@ -16,7 +16,9 @@ import logging
 import sys
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import TransportSecuritySettings
 
+from app.config import settings
 from app.database import SessionLocal
 from app.mcp.resolver import resolve_framework_id, resolve_frameworks
 from app.services.comparison_service import ComparisonService
@@ -35,6 +37,11 @@ logger = logging.getLogger("sfr.mcp")
 # ── Server ────────────────────────────────────────────────────────────
 mcp = FastMCP(
     "SFR – Shared Framework Repository",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=settings.mcp_allowed_hosts_list,
+        allowed_origins=settings.mcp_allowed_origins_list,
+    ),
 )
 
 
