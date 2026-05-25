@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
+from sqlalchemy import or_ as _or
 from sqlalchemy.orm import Session
 
 from app.models.business_model import BusinessModel
-from app.models.control import Domain
+from app.models.control import Control, Domain
 from app.models.framework import Framework, FrameworkVersion
 from app.models.jurisdiction import FrameworkJurisdiction, Jurisdiction
+from app.models.mapping import ControlMapping
+
+logger = logging.getLogger(__name__)
 
 
 class RecommendationService:
@@ -41,10 +47,14 @@ class RecommendationService:
         filters_applied: list[str] = []
 
         if jurisdiction:
+            # Try lookup by code, name, or region — so "NA", "North America",
+            # "United States", and "US" all resolve to the matching jurisdictions.
             j = (
                 self.session.query(Jurisdiction)
                 .filter(
-                    Jurisdiction.code.ilike(jurisdiction) | Jurisdiction.name.ilike(jurisdiction)
+                    Jurisdiction.code.ilike(jurisdiction)
+                    | Jurisdiction.name.ilike(jurisdiction)
+                    | Jurisdiction.region.ilike(jurisdiction)
                 )
                 .first()
             )
@@ -54,6 +64,9 @@ class RecommendationService:
                 query = query.filter(
                     Framework.jurisdictions.any(jurisdiction_id=j.id)
                 )
+            else:
+                # Jurisdiction didn't match — note it but don't filter
+                filters_applied.append(f"jurisdiction='{jurisdiction}' (not found, skipped)")
 
         if domain:
             d = (
@@ -63,6 +76,15 @@ class RecommendationService:
             )
             if d:
                 filters_applied.append(f"domain={d.code}")
+                # Filter to frameworks that have controls in this domain
+                fw_ids_in_domain = (
+                    self.session.query(ControlMapping.framework_id)
+                    .join(Control, ControlMapping.control_id == Control.id)
+                    .filter(Control.domain_id == d.id)
+                    .distinct()
+                    .subquery()
+                )
+                query = query.filter(Framework.id.in_(fw_ids_in_domain))
 
         if category:
             filters_applied.append(f"category={category}")
@@ -71,10 +93,7 @@ class RecommendationService:
         if business_model:
             filters_applied.append(f"business_model={business_model}")
 
-            from sqlalchemy import or_ as _or
-
-            from app.models.control import Control, Domain
-            from app.models.mapping import ControlMapping
+            # Use module-level imports for Control, Domain, ControlMapping
 
             # Condition 1: via applicability_rules (exact business_model match)
             rule_condition = Framework.applicability_rules.any(
@@ -176,10 +195,28 @@ class RecommendationService:
 
         frameworks = query.order_by(Framework.code).all()
 
-        # Build data-rich compliance blueprints
-        from app.models.control import Control
-        from app.models.mapping import ControlMapping
+        # ── Graceful fallback: if combined strict filters return 0 results,
+        #    try again without jurisdiction and privacy_context (the most
+        #    common over-filters from natural-language queries).
+        if not frameworks and filters_applied:
+            retry_filters = [f for f in filters_applied
+                             if not f.startswith("jurisdiction=") and not f.startswith("privacy_context=")]
+            if len(retry_filters) < len(filters_applied):
+                logger.info(
+                    "0 results with strict filters (%s) — retrying without jurisdiction/privacy",
+                    filters_applied,
+                )
+                return self.recommend_by_context(
+                    category=category,
+                    business_model=business_model,
+                    domain=domain,
+                    size=size,
+                    firm_size=firm_size,
+                    threat_profile=threat_profile,
+                    search=search,
+                )
 
+        # Build data-rich compliance blueprints (imports are at module level)
         results = []
         for fw in frameworks:
             active_ver = (
@@ -254,6 +291,12 @@ class RecommendationService:
             "applied_filters": filters_applied,
             "firm_size": effective_size,
             "threat_profile": threat_profile,
+            "note": (
+                "Some optional filters were skipped because they matched no data. "
+                "Try calling with fewer filters (e.g. just business_model) for broader results."
+                if not frameworks and filters_applied
+                else None
+            ),
         }
 
     def recommend_by_category(self, category: str) -> dict:

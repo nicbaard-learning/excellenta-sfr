@@ -15,6 +15,7 @@ class FrameworkRecommendationRequest(BaseModel):
     size: str | None = None  # deprecated, use firm_size instead
     firm_size: str | None = None
     threat_profile: str | None = None
+    search: str | None = None
 
 
 class RecommendedControl(BaseModel):
@@ -57,6 +58,7 @@ class FrameworkRecommendationResponse(BaseModel):
     applied_filters: list[str]
     firm_size: str | None = None
     threat_profile: str | None = None
+    note: str | None = None
 
 
 class CategoryFrameworkResponse(BaseModel):

@@ -52,7 +52,7 @@ def compare_intersection(
         raise HTTPException(status_code=400, detail="At least two framework IDs are required")
     svc = ComparisonService(session)
     try:
-        result = svc.intersection(req.framework_ids)
+        result = svc.intersection(req.framework_ids, domain_code=req.domain)
         result["common_controls"] = [_control_to_dict(c) for c in result["common_controls"]]
         return FrameworkIntersectionResponse(**result)
     except ValueError as exc:
@@ -69,7 +69,7 @@ def compare_differences(
         raise HTTPException(status_code=400, detail="At least two framework IDs are required")
     svc = ComparisonService(session)
     try:
-        result = svc.differences(req.framework_ids[0], req.framework_ids[1])
+        result = svc.differences(req.framework_ids[0], req.framework_ids[1], domain_code=req.domain)
         result["in_base_not_compare"] = [_control_to_dict(c) for c in result["in_base_not_compare"]]
         result["in_compare_not_base"] = [_control_to_dict(c) for c in result["in_compare_not_base"]]
         return FrameworkDifferenceResponse(**result)
@@ -87,7 +87,7 @@ def compare_common_controls(
         raise HTTPException(status_code=400, detail="At least two framework IDs are required")
     svc = ComparisonService(session)
     try:
-        result = svc.common_control_set(req.framework_ids)
+        result = svc.common_control_set(req.framework_ids, domain_code=req.domain)
         return DeduplicatedControlSetResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

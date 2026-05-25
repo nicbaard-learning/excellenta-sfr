@@ -11,6 +11,7 @@ class FrameworkCompareRequest(BaseModel):
     include_objectives: bool = False
     include_evidence: bool = False
     include_mappings: bool = True
+    domain: str | None = None
 
 
 class FrameworkCompareResponse(BaseModel):
@@ -29,6 +30,7 @@ class FrameworkIntersectionResponse(BaseModel):
     framework_names: dict[int, str]
     total_common_controls: int
     common_controls: list[ControlResponse]
+    domain_filter: str | None = None
 
 
 class FrameworkDifferenceResponse(BaseModel):
@@ -41,6 +43,7 @@ class FrameworkDifferenceResponse(BaseModel):
     in_compare_not_base: list[ControlResponse]
     base_count: int
     compare_count: int
+    domain_filter: str | None = None
 
 
 class CommonControlSetResponse(BaseModel):
@@ -56,3 +59,4 @@ class DeduplicatedControlSetResponse(BaseModel):
     framework_names: dict[int, str]
     total_controls: int
     controls: list[CommonControlSetResponse]
+    domain_filter: str | None = None

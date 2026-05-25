@@ -66,8 +66,13 @@ class ComparisonService:
             "unique_control_count": {fid: len(gaps[fid]) for fid in framework_ids},
         }
 
-    def intersection(self, framework_ids: list[int]) -> dict:
-        """Return the intersection (common controls) across all given frameworks."""
+    def intersection(self, framework_ids: list[int], domain_code: str | None = None) -> dict:
+        """Return the intersection (common controls) across all given frameworks.
+
+        Args:
+            framework_ids: List of framework IDs to compare.
+            domain_code: Optional SCF domain code to filter results (e.g. "IR", "AC", "AU").
+        """
         if len(framework_ids) < 2:
             raise ValueError("At least two framework IDs are required.")
 
@@ -75,34 +80,76 @@ class ComparisonService:
         common_ids = fw_controls[0].intersection(*fw_controls[1:])
         names = {fid: self._get_framework_name(fid) for fid in framework_ids}
 
+        controls = self._get_controls(common_ids)
+
+        # Filter by domain if requested
+        if domain_code:
+            from app.models.control import Domain
+            domain = (
+                self.session.query(Domain)
+                .filter(Domain.code.ilike(domain_code) | Domain.name.ilike(domain_code))
+                .first()
+            )
+            if domain:
+                controls = [c for c in controls if c.domain_id == domain.id]
+
         return {
             "framework_ids": framework_ids,
             "framework_names": names,
-            "total_common_controls": len(common_ids),
-            "common_controls": self._get_controls(common_ids),
+            "total_common_controls": len(controls),
+            "common_controls": controls,
+            "domain_filter": domain_code,
         }
 
-    def differences(self, base_framework_id: int, compare_framework_id: int) -> dict:
-        """Return controls in one but not the other (symmetric difference)."""
+    def differences(self, base_framework_id: int, compare_framework_id: int, domain_code: str | None = None) -> dict:
+        """Return controls in one but not the other (symmetric difference).
+
+        Args:
+            base_framework_id: The reference framework.
+            compare_framework_id: The framework to compare against.
+            domain_code: Optional SCF domain code to filter results (e.g. "IR", "AC", "AU").
+        """
         base_ids = self._get_control_ids_for_framework(base_framework_id)
         compare_ids = self._get_control_ids_for_framework(compare_framework_id)
 
         in_base_not_compare = base_ids - compare_ids
         in_compare_not_base = compare_ids - base_ids
 
+        def _filter_by_domain(controls: list[Control]) -> list[Control]:
+            if not domain_code:
+                return controls
+            from app.models.control import Domain
+            domain = (
+                self.session.query(Domain)
+                .filter(Domain.code.ilike(domain_code) | Domain.name.ilike(domain_code))
+                .first()
+            )
+            if domain:
+                controls = [c for c in controls if c.domain_id == domain.id]
+            return controls
+
+        base_controls = _filter_by_domain(self._get_controls(in_base_not_compare))
+        compare_controls = _filter_by_domain(self._get_controls(in_compare_not_base))
+
         return {
             "base_framework_id": base_framework_id,
             "base_framework_name": self._get_framework_name(base_framework_id),
             "compare_framework_id": compare_framework_id,
             "compare_framework_name": self._get_framework_name(compare_framework_id),
-            "in_base_not_compare": self._get_controls(in_base_not_compare),
-            "in_compare_not_base": self._get_controls(in_compare_not_base),
-            "base_count": len(in_base_not_compare),
-            "compare_count": len(in_compare_not_base),
+            "in_base_not_compare": base_controls,
+            "in_compare_not_base": compare_controls,
+            "base_count": len(base_controls),
+            "compare_count": len(compare_controls),
+            "domain_filter": domain_code,
         }
 
-    def common_control_set(self, framework_ids: list[int]) -> dict:
-        """Return deduplicated common controls with mapping details per framework."""
+    def common_control_set(self, framework_ids: list[int], domain_code: str | None = None) -> dict:
+        """Return deduplicated common controls with mapping details per framework.
+
+        Args:
+            framework_ids: List of framework IDs to compare.
+            domain_code: Optional SCF domain code to filter results (e.g. "IR", "AC", "AU").
+        """
         if len(framework_ids) < 2:
             raise ValueError("At least two framework IDs are required.")
 
@@ -119,6 +166,18 @@ class ComparisonService:
             }
 
         common_controls = self._get_controls(common_ids)
+
+        # Filter by domain if requested (before building details)
+        if domain_code:
+            from app.models.control import Domain
+            domain = (
+                self.session.query(Domain)
+                .filter(Domain.code.ilike(domain_code) | Domain.name.ilike(domain_code))
+                .first()
+            )
+            if domain:
+                common_controls = [c for c in common_controls if c.domain_id == domain.id]
+
         controls_with_details = []
 
         for ctrl in common_controls:
@@ -167,4 +226,5 @@ class ComparisonService:
             "framework_names": names,
             "total_controls": len(controls_with_details),
             "controls": controls_with_details,
+            "domain_filter": domain_code,
         }

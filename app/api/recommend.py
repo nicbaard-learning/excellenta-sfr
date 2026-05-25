@@ -40,6 +40,7 @@ def recommend_frameworks(
         size=req.size,
         firm_size=req.firm_size,
         threat_profile=req.threat_profile,
+        search=req.search,
     )
     return FrameworkRecommendationResponse(**result)
 

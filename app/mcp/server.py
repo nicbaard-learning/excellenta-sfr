@@ -61,6 +61,16 @@ def _get_session():
         "based on context attributes. Use this to answer questions like "
         "'What frameworks apply to a South African SaaS company?' or "
         "'What privacy frameworks apply in the US?'"
+        "\n\n"
+        "STRATEGY FOR USING THIS TOOL:\n"
+        "1. Start with just `business_model` — that's the most reliable filter.\n"
+        "2. If the results are too broad, call again with additional filters like\n"
+        "   `firm_size`, `jurisdiction`, or `privacy_context`.\n"
+        "3. If you can't cleanly map a natural-language description to one of the\n"
+        "   structured parameters, use the `search` parameter for free-text matching\n"
+        "   against framework names, descriptions, and publishers.\n"
+        "4. Jurisdiction accepts ISO codes (\"US\", \"ZA\"), country names \n"
+        "   (\"United States\"), or region names (\"NA\", \"North America\")."
     ),
 )
 def get_applicable_frameworks(
@@ -72,6 +82,7 @@ def get_applicable_frameworks(
     size: str | None = None,
     firm_size: str | None = None,
     threat_profile: str | None = None,
+    search: str | None = None,
 ) -> dict:
     """Recommend frameworks matching the provided context.
 
@@ -80,18 +91,25 @@ def get_applicable_frameworks(
     and firm-size solutions.
 
     Args:
-        category: Framework category (e.g. "international", "industry", "regulatory").
         business_model: Business model / vendor category (e.g. "SAAS", "IAAS", "MSP").
-        jurisdiction: Jurisdiction code or name (e.g. "ZA", "US", "EU").
+            Start here — it's the most reliable way to get recommendations.
+        jurisdiction: Jurisdiction code, name, or region
+            (e.g. "US", "United States", "NA", "North America").
+        category: Framework category (e.g. "international", "industry", "regulatory").
         domain: SCF domain code or name (e.g. "AC", "AU", "IA").
         privacy_context: Privacy-context flag (e.g. "privacy", "security").
         size: Organisation size (deprecated, use firm_size).
         firm_size: Organisation size (e.g. "micro", "small", "medium", "large", "enterprise").
         threat_profile: Threat profile / sector (e.g. "healthcare", "financial", "government").
+        search: Free-text search against framework names, descriptions,
+            codes, and publishers. Use this when you can't cleanly map
+            a natural-language question to structured params.
 
     Returns:
         A dict with "recommendations" (list of framework blueprints),
         "total" count, "applied_filters" summary, and context metadata.
+        If zero results are returned, try calling with fewer filters
+        (e.g. just business_model) for broader results.
     """
     session = _get_session()
     try:
@@ -105,6 +123,7 @@ def get_applicable_frameworks(
             size=size,
             firm_size=firm_size,
             threat_profile=threat_profile,
+            search=search,
         )
         return result
     except Exception as exc:
@@ -199,13 +218,16 @@ def get_framework_details(
     description=(
         "List controls mapped to a compliance framework. "
         "Provide either framework_id or framework_name (e.g. 'PCI-DSS', 'ISO 27001'). "
-        "Use this to answer questions like 'Show me the controls for PCI-DSS'."
+        "Use this to answer questions like 'Show me the controls for PCI-DSS'.\n"
+        "If you need controls within a specific domain (e.g. Incident Response), "
+        "use the `domain` parameter with a domain code like 'IR', 'AC', 'AU', etc."
     ),
 )
 def get_framework_controls(
     framework_id: int | None = None,
     framework_name: str | None = None,
     limit: int | None = 100,
+    domain: str | None = None,
 ) -> dict:
     """List controls for a framework.
 
@@ -213,6 +235,8 @@ def get_framework_controls(
         framework_id: Internal numeric framework ID.
         framework_name: Natural framework name (e.g. "ISO 27001", "PCI-DSS").
         limit: Maximum number of controls to return (default 100).
+        domain: Optional SCF domain code to filter controls
+            (e.g. "IR" for Incident Response, "AC" for Access Control).
 
     Returns:
         Dict with framework info and list of controls.
@@ -231,16 +255,28 @@ def get_framework_controls(
         if not fw:
             return {"error": f"Framework with id {resolved_id} not found in database."}
 
-        ctrl_svc = ControlService(session)
-        controls = ctrl_svc.get_controls_for_framework(resolved_id)
-        limited = controls[: limit] if limit else controls
+        all_controls = fw_svc.get_controls_for_framework(resolved_id)
+
+        # Filter by domain if requested
+        if domain:
+            from app.models.control import Domain
+            domain_obj = (
+                session.query(Domain)
+                .filter(Domain.code.ilike(domain) | Domain.name.ilike(domain))
+                .first()
+            )
+            if domain_obj:
+                all_controls = [c for c in all_controls if c.domain_id == domain_obj.id]
+
+        limited = all_controls[: limit] if limit else all_controls
 
         return {
             "framework_id": resolved_id,
             "framework_code": fw.code,
             "framework_name": fw.name,
-            "total_controls": len(controls),
+            "total_controls": len(all_controls),
             "returned": len(limited),
+            "domain_filter": domain,
             "controls": [
                 {
                     "id": c.id,
@@ -271,12 +307,21 @@ def get_framework_controls(
         "Compare two or more compliance frameworks to find overlapping controls, "
         "gaps, or differences. Use this to answer questions like "
         "'Compare ISO 27001 and NIST CSF' or 'What overlaps between POPIA and GDPR?'."
+        "\n\n"
+        "If you need to compare controls within a specific domain (e.g. Incident Response, "
+        "Access Control), use the `domain` parameter to filter results by SCF domain code:\n"
+        "- IR = Incident Response\n"
+        "- AC = Access Control\n"
+        "- AU = Audit & Accountability\n"
+        "- etc.\n"
+        "You can also first call get_framework_controls with a domain filter, then compare."
     ),
 )
 def compare_frameworks(
     framework_ids: list[int] | None = None,
     framework_names: list[str] | None = None,
     mode: str = "intersection",
+    domain: str | None = None,
 ) -> dict:
     """Compare frameworks to find overlaps and differences.
 
@@ -287,6 +332,8 @@ def compare_frameworks(
             - "intersection" (default): return only the controls common to ALL frameworks.
             - "differences": return controls in one but not the other (requires exactly 2 frameworks).
             - "common_controls": detailed common controls with per-framework mapping info.
+        domain: Optional SCF domain code to filter results (e.g. "IR" for Incident Response,
+            "AC" for Access Control, "AU" for Audit & Accountability).
 
     Returns:
         Comparison results depending on mode.
@@ -315,7 +362,7 @@ def compare_frameworks(
         comp_svc = ComparisonService(session)
 
         if mode == "intersection":
-            result = comp_svc.intersection(ids)
+            result = comp_svc.intersection(ids, domain_code=domain)
             result["common_controls"] = [
                 {
                     "id": c.id,
@@ -331,7 +378,7 @@ def compare_frameworks(
             return result
 
         elif mode == "differences":
-            result = comp_svc.differences(ids[0], ids[1])
+            result = comp_svc.differences(ids[0], ids[1], domain_code=domain)
             result["in_base_not_compare"] = [
                 {
                     "id": c.id,
@@ -355,7 +402,7 @@ def compare_frameworks(
             return result
 
         elif mode == "common_controls":
-            result = comp_svc.common_control_set(ids)
+            result = comp_svc.common_control_set(ids, domain_code=domain)
             for item in result["controls"]:
                 ctrl = item["control"]
                 item["control"] = {
