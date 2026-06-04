@@ -26,7 +26,6 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
 from app.config import settings
@@ -322,42 +321,66 @@ async def oauth_token(request: Request):
     }
 
 
-# ── MCP Auth Middleware ────────────────────────────────────────────────
+# ── MCP Auth Middleware (raw ASGI — compatible with SSE) ─────────────
 
 
-class MCPAuthMiddleware(BaseHTTPMiddleware):
-    """Middleware that validates Bearer tokens on MCP SSE endpoints.
+class MCPAuthMiddleware:
+    """Raw ASGI middleware that validates Bearer tokens on MCP SSE endpoints.
 
-    Protects /mcp/sse and /mcp/messages/* routes.
-    Passes through all other routes (including itself being on /mcp).
+    This is a pure ASGI middleware (NOT Starlette's BaseHTTPMiddleware) to
+    avoid the known incompatibility between BaseHTTPMiddleware and SSE streaming
+    responses. It passes through ASGI messages without buffering the body.
+
+    Protects /mcp/sse and /mcp/messages routes inside the mounted MCP sub-app.
     """
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        path = request.url.path.rstrip("/")
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http",):
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "").rstrip("/")
 
         # Only protect MCP SSE transport endpoints
         is_mcp_endpoint = path == "/sse" or path.startswith("/messages")
 
         if is_mcp_endpoint:
-            auth_header = request.headers.get("Authorization", "")
+            # Extract Bearer token from headers
+            headers = dict(scope.get("headers", []))
+            auth_bytes = headers.get(b"authorization", b"")
+            auth_header = auth_bytes.decode("utf-8", errors="replace")
+
             if not auth_header.startswith("Bearer "):
                 logger.warning("MCP request without Bearer token: %s", path)
-                return Response(
-                    "Unauthorized – Bearer token required",
-                    status_code=401,
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+                return await _send_401(send, "Unauthorized – Bearer token required")
 
             token_str = auth_header[len("Bearer "):]
             payload = verify_token(token_str)
             if not payload:
                 logger.warning("MCP request with invalid/expired token: %s", path)
-                return Response(
-                    "Invalid or expired token",
-                    status_code=401,
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+                return await _send_401(send, "Invalid or expired token")
 
             logger.debug("Authenticated MCP request: sub=%s scope=%s", payload.get("sub"), payload.get("scope"))
 
-        return await call_next(request)
+        await self.app(scope, receive, send)
+
+
+async def _send_401(send, message: str):
+    """Send a 401 Unauthorized response via raw ASGI send."""
+    body = message.encode("utf-8")
+    await send({
+        "type": "http.response.start",
+        "status": 401,
+        "headers": [
+            (b"content-type", b"text/plain; charset=utf-8"),
+            (b"content-length", str(len(body)).encode()),
+            (b"www-authenticate", b"Bearer"),
+        ],
+    })
+    await send({
+        "type": "http.response.body",
+        "body": body,
+    })
