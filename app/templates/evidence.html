@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% block title %}Evidence Intelligence{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Evidence Intelligence</h1>
+  <p>Generate evidence checklists, audit preparation packs, and readiness scores for any compliance framework.</p>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Evidence Checklist Generator</div>
+  <div class="card-body">
+    <form id="evidence-form">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="fw_name">Framework</label>
+          <input type="text" name="framework_name" id="fw_name" placeholder="e.g. POPIA, PCI-DSS, ISO 27001" value="{{ request.query_params.get('framework_name', '') }}" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="fw_firm_size">Firm Size (optional)</label>
+          <select name="firm_size" id="fw_firm_size">
+            <option value="">— Any —</option>
+            <option value="micro">Micro (1-10)</option>
+            <option value="small">Small (11-50)</option>
+            <option value="medium">Medium (51-500)</option>
+            <option value="large">Large (501-5000)</option>
+            <option value="enterprise">Enterprise (5000+)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="fw_domain">Domain (optional)</label>
+          <input type="text" name="domain" id="fw_domain" placeholder="e.g. IR, AC, AU" style="width:100%;">
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:12px;align-items:center;">
+        <button type="submit" class="btn">Generate Checklist</button>
+        <span id="evidence-loading" class="loading" style="display:none;padding:0;">Loading...</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="evidence-results"></div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Audit Preparation Pack</div>
+  <div class="card-body">
+    <form id="audit-form">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="audit_fw_name">Framework</label>
+          <input type="text" name="audit_fw_name" id="audit_fw_name" placeholder="e.g. POPIA, PCI-DSS" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="audit_domain">Domain (optional)</label>
+          <input type="text" name="audit_domain" id="audit_domain" placeholder="e.g. IR" style="width:100%;">
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <button type="submit" class="btn">Generate Audit Pack</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="audit-results"></div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Control Evidence Lookup</div>
+  <div class="card-body">
+    <form id="control-evidence-form">
+      <div class="form-group" style="margin:0;">
+        <label for="ctrl_scf_id">SCF Control ID</label>
+        <input type="text" name="scf_id" id="ctrl_scf_id" placeholder="e.g. AC-01-01, IR-04-02" style="width:100%;max-width:400px;">
+      </div>
+      <div style="margin-top:12px;">
+        <button type="submit" class="btn">Look Up Evidence</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="control-evidence-results"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('evidence-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fw = document.getElementById('fw_name').value;
+    const firmSize = document.getElementById('fw_firm_size').value;
+    const domain = document.getElementById('fw_domain').value;
+    const loading = document.getElementById('evidence-loading');
+    const results = document.getElementById('evidence-results');
+
+    if (!fw) { results.innerHTML = '<div class="error">Please enter a framework name.</div>'; return; }
+
+    loading.style.display = 'inline';
+    results.innerHTML = '';
+
+    let url = `/api/evidence/checklist?framework_name=${encodeURIComponent(fw)}`;
+    if (firmSize) url += `&firm_size=${encodeURIComponent(firmSize)}`;
+    if (domain) url += `&domain=${encodeURIComponent(domain)}`;
+
+    try {
+      const resp = await fetch(url);
+      const data = await resp.json();
+      loading.style.display = 'none';
+      renderEvidenceResults(data, results);
+    } catch (err) {
+      loading.style.display = 'none';
+      results.innerHTML = `<div class="error">Failed to load: ${err.message}</div>`;
+    }
+  });
+
+  document.getElementById('audit-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fw = document.getElementById('audit_fw_name').value;
+    const domain = document.getElementById('audit_domain').value;
+    const results = document.getElementById('audit-results');
+
+    if (!fw) { results.innerHTML = '<div class="error">Please enter a framework name.</div>'; return; }
+    results.innerHTML = '<div class="loading">Generating audit pack...</div>';
+
+    let url = `/api/evidence/audit-pack?framework_name=${encodeURIComponent(fw)}`;
+    if (domain) url += `&domain=${encodeURIComponent(domain)}`;
+
+    try {
+      const resp = await fetch(url);
+      const data = await resp.json();
+      renderAuditPack(data, results);
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed to load: ${err.message}</div>`;
+    }
+  });
+
+  document.getElementById('control-evidence-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const scfId = document.getElementById('ctrl_scf_id').value;
+    const results = document.getElementById('control-evidence-results');
+
+    if (!scfId) { results.innerHTML = '<div class="error">Please enter a control ID.</div>'; return; }
+    results.innerHTML = '<div class="loading">Looking up evidence...</div>';
+
+    try {
+      const eqResp = await fetch(`/api/translate/control-equivalents?scf_id=${encodeURIComponent(scfId)}`);
+      const eqData = await eqResp.json();
+
+      if (eqData.error) {
+        results.innerHTML = `<div class="empty"><p>Control "${scfId}" not found</p></div>`;
+        return;
+      }
+      if (eqData.control && eqData.control.scf_id) {
+        const evResp = await fetch(`/api/translate/control-equivalents?scf_id=${encodeURIComponent(scfId)}`);
+        const evData = await evResp.json();
+        renderControlEvidence(evData, results);
+      } else {
+        results.innerHTML = `<div class="empty"><p>Control "${scfId}" not found</p></div>`;
+      }
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed to load: ${err.message}</div>`;
+    }
+  });
+});
+
+function renderEvidenceResults(data, container) {
+  if (data.error) {
+    container.innerHTML = `<div class="error">${data.error}</div>`;
+    return;
+  }
+
+  const score = data.summary?.readiness_score?.overall || 0;
+  const scoreClass = score >= 70 ? 'success' : score >= 40 ? 'warn' : '';
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>${data.framework?.name || 'Framework'} — Evidence Checklist</span>
+        <span class="badge ${scoreClass}">Readiness: ${score}%</span>
+      </div>
+      <div class="card-body">
+        <div class="stats">
+          <div class="stat"><div class="stat-value">${data.summary?.total_evidence_items || 0}</div><div class="stat-label">Evidence Items</div></div>
+          <div class="stat"><div class="stat-value">${data.summary?.evidence_gaps || 0}</div><div class="stat-label">Evidence Gaps</div></div>
+          <div class="stat"><div class="stat-value">${data.summary?.total_controls || 0}</div><div class="stat-label">Controls</div></div>
+        </div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+          ${data.summary?.readiness_score?.interpretation || ''}
+        </p>
+      </div>
+    </div>
+  `;
+
+  // Evidence by effort
+  if (data.evidence_by_effort) {
+    html += `<div class="card" style="margin-bottom:16px;"><div class="card-header">Evidence by Audit Effort</div><div class="card-body">`;
+    for (const [level, info] of Object.entries(data.evidence_by_effort)) {
+      if (info.count === 0) continue;
+      const effortClass = level === 'high_effort' ? 'warn' : level === 'medium_effort' ? 'primary' : 'success';
+      html += `
+        <div class="effort-section" style="margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <strong style="text-transform:capitalize;">${level.replace('_', ' ')}</strong>
+            <span class="badge ${effortClass}">${info.count} items</span>
+          </div>
+          <p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${info.description}</p>
+          ${info.items?.length ? `<details><summary style="font-size:12px;cursor:pointer;">View items</summary>
+            <table style="margin-top:8px;"><thead><tr><th>ERL</th><th>Title</th><th>Type</th><th>Control</th></tr></thead><tbody>
+            ${info.items.map(i => `<tr><td><code>${i.erl_number || ''}</code></td><td>${i.evidence_title || ''}</td><td>${i.evidence_type || ''}</td><td><code>${i.control_scf_id || ''}</code></td></tr>`).join('')}
+            </tbody></table></details>` : ''}
+        </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // Evidence gaps
+  if (data.evidence_gaps?.length) {
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <span>Evidence Gaps — Controls Without Artifacts</span>
+          <span class="badge warn">${data.evidence_gaps.length} gaps</span>
+        </div>
+        <div class="card-body table-wrap">
+          <table>
+            <thead><tr><th>SCF #</th><th>Title</th><th>Domain</th><th>Suggested Evidence</th></tr></thead>
+            <tbody>
+              ${data.evidence_gaps.map(g => `<tr>
+                <td class="scf-id"><a href="/controls/${g.scf_id}">${g.scf_id}</a></td>
+                <td>${g.title}</td>
+                <td>${g.domain_code || '—'}</td>
+                <td style="font-size:12px;">${g.suggested_evidence_types?.join(', ') || '—'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function renderAuditPack(data, container) {
+  if (data.error) {
+    container.innerHTML = `<div class="error">${data.error}</div>`;
+    return;
+  }
+  const score = data.audit_readiness?.score?.overall || 0;
+  const scoreClass = score >= 70 ? 'success' : score >= 40 ? 'warn' : '';
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>${data.pack_title || 'Audit Pack'}</span>
+        <span class="badge ${scoreClass}">Readiness: ${score}%</span>
+      </div>
+      <div class="card-body">
+        <div class="stats">
+          <div class="stat"><div class="stat-value">${data.summary?.total_control_details || 0}</div><div class="stat-label">Controls</div></div>
+          <div class="stat"><div class="stat-value">${data.summary?.evidence_gaps || 0}</div><div class="stat-label">Gaps</div></div>
+        </div>`;
+
+  if (data.audit_readiness?.recommendations?.length) {
+    html += `<div style="margin-top:12px;"><strong>Recommendations:</strong><ul style="margin-top:6px;padding-left:20px;">`;
+    for (const rec of data.audit_readiness.recommendations) {
+      html += `<li style="font-size:13px;margin-bottom:4px;">${rec}</li>`;
+    }
+    html += `</ul></div>`;
+  }
+
+  // Control by domain
+  if (data.control_by_domain) {
+    html += `<div style="margin-top:16px;"><strong>Controls by Domain:</strong><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:8px;">`;
+    for (const [domain, controls] of Object.entries(data.control_by_domain)) {
+      html += `<div class="stat"><div class="stat-value">${controls.length}</div><div class="stat-label">${domain}</div></div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  html += `</div></div>`;
+  container.innerHTML = html;
+}
+
+function renderControlEvidence(data, container) {
+  if (data.error) {
+    container.innerHTML = `<div class="error">${data.error}</div>`;
+    return;
+  }
+
+  const strong = data.evidence_artifacts?.strong_evidence?.count || 0;
+  const weak = data.evidence_artifacts?.weak_evidence?.count || 0;
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span><code>${data.control?.scf_id}</code> ${data.control?.title}</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">${data.control?.description || ''}</p>
+        <div class="stats">
+          <div class="stat"><div class="stat-value">${strong}</div><div class="stat-label">Strong Evidence</div></div>
+          <div class="stat"><div class="stat-value">${weak}</div><div class="stat-label">Weak Evidence</div></div>
+          <div class="stat"><div class="stat-value">${data.evidence_artifacts?.total || 0}</div><div class="stat-label">Total Items</div></div>
+          <div class="stat"><div class="stat-value">${data.assessment_objectives?.length || 0}</div><div class="stat-label">Objectives</div></div>
+        </div>`;
+
+  // Objectives
+  if (data.assessment_objectives?.length) {
+    html += `<details style="margin-top:12px;"><summary style="cursor:pointer;font-weight:600;">Assessment Objectives</summary>
+      <ul style="margin-top:8px;padding-left:20px;">`;
+    for (const obj of data.assessment_objectives) {
+      html += `<li style="font-size:13px;margin-bottom:4px;"><code>${obj.code || ''}</code> ${obj.text}</li>`;
+    }
+    html += `</ul></details>`;
+  }
+
+  // Strong evidence
+  if (data.evidence_artifacts?.strong_evidence?.examples?.length) {
+    html += `<details style="margin-top:12px;"><summary style="cursor:pointer;font-weight:600;color:var(--accent);">✅ Strong Evidence (${strong})</summary>
+      <table style="margin-top:8px;"><thead><tr><th>ERL</th><th>Title</th><th>Type</th></tr></thead><tbody>`;
+    for (const e of data.evidence_artifacts.strong_evidence.examples) {
+      html += `<tr><td><code>${e.erl_number || ''}</code></td><td>${e.evidence_title || ''}</td><td>${e.evidence_type || ''}</td></tr>`;
+    }
+    html += `</tbody></table></details>`;
+  }
+
+  // Suggested evidence
+  if (data.suggested_evidence_types?.length) {
+    html += `<div style="margin-top:12px;">
+      <strong>Suggested Evidence Types:</strong>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        ${data.suggested_evidence_types.map(t => `<span class="badge primary">${t}</span>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  html += `</div></div>`;
+  container.innerHTML = html;
+}
+</script>
+
+<style>
+.effort-section { border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+details summary { font-size: 13px; color: var(--text-muted); }
+details[open] summary { margin-bottom: 8px; }
+</style>
+
+{% endblock %}

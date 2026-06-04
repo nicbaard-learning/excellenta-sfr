@@ -22,7 +22,7 @@ try:
     from app.database import engine, Base
 
     # ── Register API routers ──────────────────────────────────────────────
-    from app.api import frameworks, controls, compare, recommend, reference, system  # noqa: E402
+    from app.api import frameworks, controls, compare, recommend, reference, system, evidence, translation, maturity, roadmap, risk_intelligence  # noqa: E402
     from app.ui import router as ui_router  # noqa: E402
     from dotenv import load_dotenv
     import os
@@ -114,6 +114,11 @@ try:
     app.include_router(recommend.router)
     app.include_router(reference.router)
     app.include_router(system.router)
+    app.include_router(evidence.router)
+    app.include_router(translation.router)
+    app.include_router(maturity.router)
+    app.include_router(roadmap.router)
+    app.include_router(risk_intelligence.router)
 
     # ── MCP (SSE transport) ──────────────────────────────────────────────
     # Mounts the Model Context Protocol server for AI-agent access.

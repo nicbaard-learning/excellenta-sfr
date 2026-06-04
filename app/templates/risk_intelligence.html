@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Risk Intelligence{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Risk Intelligence</h1>
+  <p>Map risks to controls, view risk heat maps, and assess residual risk posture across your compliance frameworks.</p>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Find Controls for a Risk</div>
+  <div class="card-body">
+    <form id="risk-form">
+      <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="risk_q">Risk keyword</label>
+          <input type="text" name="risk_keyword" id="risk_q" placeholder="e.g. vendor data leakage, ransomware, insider threat" value="{{ request.query_params.get('q', '') }}" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn" style="width:100%;">Search</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="risk-results"></div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Risk Heat Map</div>
+  <div class="card-body">
+    <form id="heatmap-form">
+      <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="hm_grouping">Risk Grouping (optional)</label>
+          <input type="text" name="risk_grouping" id="hm_grouping" placeholder="Leave empty for all groups" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn" style="width:100%;">Generate Heat Map</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="heatmap-results"></div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Residual Risk Report</div>
+  <div class="card-body">
+    <form id="residual-form">
+      <div class="form-group" style="margin:0;">
+        <label for="res_fw">Framework</label>
+        <input type="text" name="framework_name" id="res_fw" placeholder="e.g. POPIA, ISO 27001" style="width:100%;max-width:400px;">
+      </div>
+      <div style="margin-top:12px;">
+        <button type="submit" class="btn">Generate Report</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="residual-results"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('risk-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const q = document.getElementById('risk_q').value;
+    const results = document.getElementById('risk-results');
+    results.innerHTML = '<div class="loading">Searching for risks...</div>';
+
+    try {
+      const resp = await fetch(`/api/risk-intelligence/find-controls?risk_keyword=${encodeURIComponent(q)}`);
+      const data = await resp.json();
+      renderRiskResults(data, results);
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+
+  document.getElementById('heatmap-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const grouping = document.getElementById('hm_grouping').value;
+    const results = document.getElementById('heatmap-results');
+    results.innerHTML = '<div class="loading">Generating heat map...</div>';
+
+    let url = '/api/risk-intelligence/heat-map';
+    if (grouping) url += `?risk_grouping=${encodeURIComponent(grouping)}`;
+
+    try {
+      const resp = await fetch(url);
+      const data = await resp.json();
+      renderHeatMap(data, results);
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+
+  document.getElementById('residual-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fw = document.getElementById('res_fw').value;
+    const results = document.getElementById('residual-results');
+    results.innerHTML = '<div class="loading">Generating residual risk report...</div>';
+
+    try {
+      const resp = await fetch(`/api/risk-intelligence/residual-risk?framework_name=${encodeURIComponent(fw)}`);
+      const data = await resp.json();
+      renderResidual(data, results);
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+});
+
+function renderRiskResults(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+  if (!data.results?.length) { container.innerHTML = `<div class="empty"><p>No risks found matching your search.</p></div>`; return; }
+
+  let html = '';
+  for (const result of data.results) {
+    const risk = result.risk || {};
+    const mitigations = result.mitigating_controls?.controls || [];
+
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <span>${risk.grouping ? `[${risk.grouping}] ` : ''}${risk.title || 'Risk'}</span>
+          <span class="badge warn">${risk.risk_number || ''}</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">${risk.description || ''}</p>
+          ${risk.nist_csf_function ? `<p style="font-size:12px;margin-bottom:4px;"><strong>NIST CSF:</strong> ${risk.nist_csf_function}</p>` : ''}
+          ${risk.materiality ? `<p style="font-size:12px;margin-bottom:12px;"><strong>Materiality:</strong> ${risk.materiality}</p>` : ''}
+          
+          <h3 style="font-size:14px;margin-bottom:6px;">Mitigating Controls (${result.mitigating_controls.count})</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>SCF #</th><th>Title</th><th>Domain</th><th>Mitigation Type</th></tr></thead>
+              <tbody>
+                ${mitigations.map(c => `<tr>
+                  <td class="scf-id"><a href="/controls/${c.scf_id}">${c.scf_id}</a></td>
+                  <td>${c.title || ''}</td>
+                  <td>${c.domain_code || '—'}</td>
+                  <td>${c.mitigation_level || '—'}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          ${result.relevant_frameworks?.length ? `
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+              ${result.relevant_frameworks.map(f => `<span class="badge primary">${f.code}</span>`).join('')}
+            </div>` : ''}
+
+          ${result.remediation_suggestions?.length ? `
+            <details style="margin-top:12px;">
+              <summary style="cursor:pointer;font-size:13px;font-weight:600;">Remediation Suggestions</summary>
+              <ul style="margin-top:8px;padding-left:20px;">
+                ${result.remediation_suggestions.map(s => `<li style="font-size:13px;margin-bottom:4px;">${s}</li>`).join('')}
+              </ul>
+            </details>` : ''}
+        </div>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function renderHeatMap(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+  if (!data.heat_map?.length) { container.innerHTML = `<div class="empty"><p>No risk data found.</p></div>`; return; }
+
+  const heatColors = { critical: '#dc2626', high: '#ea580c', medium: '#d97706', low: '#059669' };
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>Risk Heat Map</span>
+        <span class="badge primary">${data.total_risk_groups} groups</span>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+          ${Object.entries(data.legend || {}).map(([level, desc]) => 
+            `<div style="display:flex;align-items:center;gap:6px;font-size:12px;">
+              <span style="width:12px;height:12px;border-radius:2px;background:${heatColors[level] || '#ccc'};"></span>
+              <span style="color:var(--text-muted);">${level}: ${desc}</span>
+            </div>`
+          ).join('')}
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Risk Grouping</th><th>Risks</th><th>Controls</th><th>Coverage</th><th>Heat Level</th></tr></thead>
+            <tbody>
+              ${data.heat_map.map(h => `
+                <tr>
+                  <td><strong>${h.grouping}</strong></td>
+                  <td>${h.risk_count}</td>
+                  <td>${h.control_coverage}</td>
+                  <td>${h.coverage_ratio}</td>
+                  <td><span class="badge" style="background:${heatColors[h.heat_level] || '#ccc'};color:#fff;border:none;">${h.heat_level}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  container.innerHTML = html;
+}
+
+function renderResidual(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+
+  const summary = data.summary || {};
+  const coverageClass = summary.coverage_percentage >= 70 ? 'success' : summary.coverage_percentage >= 40 ? 'warn' : '';
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>Residual Risk Report — ${data.framework?.name || 'Framework'}</span>
+        <span class="badge ${coverageClass}">${summary.coverage_percentage}% Mitigated</span>
+      </div>
+      <div class="card-body">
+        <div class="stats">
+          <div class="stat"><div class="stat-value">${summary.total_risks_considered || 0}</div><div class="stat-label">Total Risks</div></div>
+          <div class="stat"><div class="stat-value">${summary.mitigated || 0}</div><div class="stat-label">Mitigated</div></div>
+          <div class="stat"><div class="stat-value">${summary.unmitigated || 0}</div><div class="stat-label">Unmitigated</div></div>
+        </div>
+      </div>
+    </div>`;
+
+  if (data.risk_analysis?.length) {
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <span>Risk Analysis</span>
+          <span class="badge warn">${summary.critical_risks || 0} critical</span>
+        </div>
+        <div class="card-body table-wrap">
+          <table>
+            <thead><tr><th>Risk</th><th>Grouping</th><th>Status</th><th>Residual Level</th></tr></thead>
+            <tbody>
+              ${data.risk_analysis.slice(0, 30).map(r => {
+                const levelClass = r.residual_risk_level === 'critical' ? 'warn' : r.residual_risk_level === 'high' ? 'warn' : 'success';
+                return `<tr>
+                  <td style="max-width:200px;">${r.risk?.title || ''}</td>
+                  <td>${r.risk?.grouping || '—'}</td>
+                  <td><span class="badge ${r.status === 'mitigated' ? 'success' : 'warn'}">${r.status}</span></td>
+                  <td><span class="badge ${levelClass}" style="text-transform:capitalize;">${r.residual_risk_level}</span></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  if (data.recommendations?.length) {
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">Recommendations</div>
+        <div class="card-body">
+          <ul style="padding-left:20px;">
+            ${data.recommendations.map(r => `<li style="font-size:13px;margin-bottom:6px;">${r}</li>`).join('')}
+          </ul>
+        </div>
+      </div>`;
+  }
+
+  container.innerHTML = html;
+}
+</script>
+
+{% endblock %}

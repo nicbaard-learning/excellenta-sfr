@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Compliance Roadmap{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Compliance Roadmap Generator</h1>
+  <p>Generate prioritized 30/90/180-day implementation plans tailored to your framework, firm size, and current maturity level.</p>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Generate Your Roadmap</div>
+  <div class="card-body">
+    <form id="roadmap-form">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="rm_fw">Framework</label>
+          <input type="text" name="framework_name" id="rm_fw" placeholder="e.g. POPIA, NIST CSF" value="{{ request.query_params.get('fw', '') }}" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="rm_size">Firm Size</label>
+          <select name="firm_size" id="rm_size">
+            <option value="micro">Micro (1-10)</option>
+            <option value="small" selected>Small (11-50)</option>
+            <option value="medium">Medium (51-500)</option>
+            <option value="large">Large (501-5000)</option>
+            <option value="enterprise">Enterprise (5000+)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="rm_domain">Focus Domain (optional)</label>
+          <input type="text" name="focus_domain" id="rm_domain" placeholder="e.g. IR, AC" style="width:100%;">
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:12px;align-items:center;">
+        <button type="submit" class="btn">Generate Roadmap</button>
+        <span id="rm-loading" class="loading" style="display:none;padding:0;">Generating...</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="roadmap-results"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('roadmap-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fw = document.getElementById('rm_fw').value;
+    const size = document.getElementById('rm_size').value;
+    const domain = document.getElementById('rm_domain').value;
+    const loading = document.getElementById('rm-loading');
+    const results = document.getElementById('roadmap-results');
+
+    loading.style.display = 'inline';
+    results.innerHTML = '';
+
+    let url = `/api/roadmap/generate?framework_name=${encodeURIComponent(fw)}&firm_size=${encodeURIComponent(size)}`;
+    if (domain) url += `&focus_domain=${encodeURIComponent(domain)}`;
+
+    try {
+      const resp = await fetch(url);
+      const data = await resp.json();
+      loading.style.display = 'none';
+      renderRoadmap(data, results);
+    } catch (err) {
+      loading.style.display = 'none';
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+});
+
+function renderRoadmap(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+
+  const phases = data.roadmap?.phases || {};
+  const domainPrios = data.domain_priorities || [];
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>${data.roadprint || 'Compliance Roadmap'}</span>
+        <span class="badge primary">${data.context?.firm_size || 'small'} organization</span>
+      </div>
+      <div class="card-body">
+        <div class="stats">
+          <div class="stat"><div class="stat-value">${data.context?.total_controls || 0}</div><div class="stat-label">Total Controls</div></div>
+          <div class="stat"><div class="stat-value">${data.context?.maturity_summary?.overall_avg_maturity || 0}/5</div><div class="stat-label">Avg Maturity</div></div>
+          <div class="stat"><div class="stat-value">${domainPrios.length}</div><div class="stat-label">Domains</div></div>
+        </div>
+      </div>
+    </div>`;
+
+  // Domain priorities
+  if (domainPrios.length) {
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">Domain Priorities (by effort needed)</div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">
+            ${domainPrios.map((d, i) => {
+              const urgency = i < 2 ? 'warn' : i < 4 ? 'primary' : '';
+              return `<div class="stat"><div class="stat-value">#${d.priority_rank || i+1}</div><div class="stat-label"><span class="badge ${urgency}">${d.domain_code}</span> ${d.domain_name}<br>${d.total_controls} controls · Avg: ${d.avg_maturity}/5</div></div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Phases
+  const phaseOrder = ['30_day', '90_day', '180_day'];
+  const phaseColors = { '30_day': 'success', '90_day': 'primary', '180_day': '' };
+  const phaseNames = {
+    '30_day': 'Next 30 Days — Quick Wins',
+    '90_day': '30–90 Days — Build Foundation',
+    '180_day': '90–180 Days — Mature & Optimize',
+  };
+
+  for (const key of phaseOrder) {
+    const phase = phases[key];
+    if (!phase || !phase.items?.length) continue;
+    
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header" style="border-left:4px solid ${key === '30_day' ? 'var(--accent)' : key === '90_day' ? 'var(--primary)' : 'var(--border)'};">
+          <span>${phaseNames[key]}</span>
+          <span class="badge ${phaseColors[key]}">${phase.control_count} controls</span>
+        </div>
+        <div class="card-body table-wrap">
+          <table>
+            <thead><tr><th>Priority</th><th>SCF #</th><th>Title</th><th>Domain</th><th>Weight</th><th>Gap</th></tr></thead>
+            <tbody>
+              ${phase.items.map((item, i) => `
+                <tr>
+                  <td>${i + 1}</td>
+                  <td class="scf-id"><a href="/controls/${item.scf_id}">${item.scf_id}</a></td>
+                  <td>${item.title}</td>
+                  <td>${item.domain_code || '—'}</td>
+                  <td>${item.relative_weighting || '1.0'}</td>
+                  <td><span class="badge ${item.current_maturity < 2 ? 'warn' : 'success'}">${item.current_maturity || 0}→5</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          ${phase.items[0]?.implementation_guidance ? `
+            <details style="margin-top:8px;">
+              <summary style="cursor:pointer;font-size:13px;color:var(--text-muted);">View implementation guidance</summary>
+              <div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--text);">
+                ${phase.items[0].implementation_guidance}
+              </div>
+            </details>` : ''}
+        </div>
+      </div>`;
+  }
+
+  container.innerHTML = html;
+}
+</script>
+
+{% endblock %}

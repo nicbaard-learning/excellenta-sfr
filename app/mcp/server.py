@@ -25,6 +25,11 @@ from app.services.comparison_service import ComparisonService
 from app.services.control_service import ControlService
 from app.services.framework_service import FrameworkService
 from app.services.recommendation_service import RecommendationService
+from app.services.evidence_service import EvidenceIntelligenceService
+from app.services.translation_service import TranslationService
+from app.services.maturity_service import MaturityService
+from app.services.roadmap_service import RoadmapService
+from app.services.risk_intelligence_service import RiskIntelligenceService
 
 # ── Logging ────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -416,6 +421,349 @@ def compare_frameworks(
 
     except Exception as exc:
         logger.exception("compare_frameworks failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 5: generate_evidence_checklist
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="generate_evidence_checklist",
+    description=(
+        "Generate a comprehensive evidence checklist for a compliance framework or control. "
+        "Use this to answer questions like 'What evidence do I need for POPIA?' or "
+        "'What evidence is needed for this specific control?' "
+        "Returns required evidence, supporting evidence, recommended evidence, "
+        "an audit readiness score, and evidence grouped by audit effort (low/medium/high)."
+    ),
+)
+def generate_evidence_checklist(
+    framework_id: int | None = None,
+    framework_name: str | None = None,
+    control_id: int | None = None,
+    firm_size: str | None = None,
+    domain: str | None = None,
+) -> dict:
+    """Generate evidence checklist for a framework or specific control.
+
+    Args:
+        framework_id: Internal framework ID.
+        framework_name: Natural framework name (e.g. 'POPIA', 'PCI-DSS').
+        control_id: Specific control ID for a single-control checklist.
+        firm_size: Optional firm-size filter ('micro', 'small', 'medium', 'large', 'enterprise').
+        domain: Optional SCF domain code to narrow scope (e.g. 'IR', 'AC').
+
+    Returns:
+        Evidence checklist with readiness score, gaps, and effort breakdown.
+    """
+    session = _get_session()
+    try:
+        svc = EvidenceIntelligenceService(session)
+        if control_id:
+            return svc.generate_control_evidence_checklist(control_id)
+        return svc.generate_framework_evidence_checklist(
+            framework_id=framework_id,
+            framework_name=framework_name,
+            firm_size=firm_size,
+            domain=domain,
+        )
+    except Exception as exc:
+        logger.exception("generate_evidence_checklist failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 6: translate_framework
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="translate_framework",
+    description=(
+        "Translate controls from one compliance framework to another using 41,000+ STRM-annotated "
+        "cross-framework mappings. Use this to answer questions like "
+        "'We have ISO 27001 — what additional controls are needed for POPIA?' or "
+        "'How much overlap is there between NIST CSF and PCI-DSS?' "
+        "Returns already-covered controls, missing controls, unique obligations, "
+        "and a suggested implementation order."
+    ),
+)
+def translate_framework(
+    source_framework_id: int | None = None,
+    source_framework_name: str | None = None,
+    target_framework_id: int | None = None,
+    target_framework_name: str | None = None,
+    domain: str | None = None,
+) -> dict:
+    """Translate controls from one framework to another via SCF pivot.
+
+    Args:
+        source_framework_id: Source framework ID.
+        source_framework_name: Source framework name (e.g. 'ISO 27001').
+        target_framework_id: Target framework ID.
+        target_framework_name: Target framework name (e.g. 'POPIA').
+        domain: Optional SCF domain code to narrow results.
+
+    Returns:
+        Translation with covered controls, gaps, and implementation priority.
+    """
+    session = _get_session()
+    try:
+        svc = TranslationService(session)
+        return svc.translate_framework(
+            source_framework_id=source_framework_id,
+            source_framework_name=source_framework_name,
+            target_framework_id=target_framework_id,
+            target_framework_name=target_framework_name,
+            domain=domain,
+        )
+    except Exception as exc:
+        logger.exception("translate_framework failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 7: find_control_equivalents
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="find_control_equivalents",
+    description=(
+        "Find equivalent controls across all compliance frameworks for a given SCF control. "
+        "Uses STRM types (EQUAL, SUBSET OF, SUPERSET OF, INTERSECTS WITH) to classify relationships. "
+        "Use this to answer questions like 'What is the NIST equivalent of AC-01-01?' "
+    ),
+)
+def find_control_equivalents(
+    scf_id: str | None = None,
+    control_id: int | None = None,
+) -> dict:
+    """Find equivalent controls across all frameworks for a given control.
+
+    Args:
+        scf_id: SCF control ID (e.g. 'AC-01-01').
+        control_id: Internal control ID (alternative to scf_id).
+
+    Returns:
+        List of equivalent controls with framework info and STRM relationship types.
+    """
+    session = _get_session()
+    try:
+        svc = TranslationService(session)
+        return svc.find_control_equivalents(scf_id=scf_id, control_id=control_id)
+    except Exception as exc:
+        logger.exception("find_control_equivalents failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 8: assess_maturity
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="assess_maturity",
+    description=(
+        "Assess compliance maturity against a framework using SCR-CMM maturity levels (0-5). "
+        "Provide assessed maturity levels per control to get a weighted compliance score. "
+        "Use this to answer questions like 'What is our POPIA compliance score?' or "
+        "'Which domains have the biggest maturity gaps?' "
+        "When used without assessed_levels, returns the theoretical SCR-CMM framework."
+    ),
+)
+def assess_maturity(
+    framework_id: int | None = None,
+    framework_name: str | None = None,
+    assessed_levels: dict[str, int] | None = None,
+) -> dict:
+    """Assess compliance maturity for a framework using SCR-CMM levels.
+
+    Args:
+        framework_id: Internal framework ID.
+        framework_name: Natural framework name (e.g. 'POPIA', 'ISO 27001').
+        assessed_levels: Dict mapping scf_id -> assessed maturity level (0-5).
+            Controls not listed are treated as Level 0.
+
+    Returns:
+        Compliance score with per-domain breakdown, top gaps, and maturity distribution.
+    """
+    session = _get_session()
+    try:
+        svc = MaturityService(session)
+        return svc.assess_framework_maturity(
+            framework_id=framework_id,
+            framework_name=framework_name,
+            assessed_levels=assessed_levels,
+        )
+    except Exception as exc:
+        logger.exception("assess_maturity failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 9: generate_roadmap
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="generate_roadmap",
+    description=(
+        "Generate a prioritized compliance implementation roadmap for achieving compliance with a framework. "
+        "Uses firm-size-specific implementation guidance from the SCF. "
+        "Returns a phased plan (30/90/180 days) prioritized by control weighting and maturity gap. "
+        "Use this to answer questions like 'What's our 90-day plan for POPIA compliance?' or "
+        "'Give me a compliance roadmap for a small business implementing NIST CSF.'"
+    ),
+)
+def generate_roadmap(
+    framework_id: int | None = None,
+    framework_name: str | None = None,
+    firm_size: str = "small",
+    current_maturity: dict[str, int] | None = None,
+    focus_domain: str | None = None,
+) -> dict:
+    """Generate a prioritized compliance implementation roadmap.
+
+    Args:
+        framework_id: Internal framework ID.
+        framework_name: Natural framework name.
+        firm_size: Organization size ('micro', 'small', 'medium', 'large', 'enterprise').
+        current_maturity: Dict of {scf_id: current_maturity_level} (0-5).
+        focus_domain: Optional SCF domain to narrow the scope.
+
+    Returns:
+        Phased roadmap with 30/90/180-day action items, prioritized by weight and gap.
+    """
+    session = _get_session()
+    try:
+        svc = RoadmapService(session)
+        return svc.generate_roadmap(
+            framework_id=framework_id,
+            framework_name=framework_name,
+            firm_size=firm_size,
+            current_maturity=current_maturity,
+            focus_domain=focus_domain,
+        )
+    except Exception as exc:
+        logger.exception("generate_roadmap failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 10: map_risks_to_controls
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="map_risks_to_controls",
+    description=(
+        "Find compliance controls that mitigate a specific risk or threat. "
+        "Uses the SCF Risk and Threat catalogs with intelligent keyword matching "
+        "to link risks to mitigating controls. "
+        "Returns related controls, relevant frameworks, and remediation suggestions. "
+        "Use this to answer questions like 'What controls reduce vendor data leakage risk?' or "
+        "'How do I mitigate ransomware risk?'"
+    ),
+)
+def map_risks_to_controls(
+    risk_id: int | None = None,
+    risk_keyword: str | None = None,
+) -> dict:
+    """Map risks to mitigating controls.
+
+    Args:
+        risk_id: Specific risk ID to look up.
+        risk_keyword: Free-text search for risks (e.g. 'vendor data leakage', 'ransomware').
+
+    Returns:
+        Matching risks with mitigating controls, frameworks, and remediation suggestions.
+    """
+    session = _get_session()
+    try:
+        svc = RiskIntelligenceService(session)
+        return svc.find_controls_for_risk(risk_id=risk_id, risk_keyword=risk_keyword)
+    except Exception as exc:
+        logger.exception("map_risks_to_controls failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 11: generate_risk_heat_map
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="generate_risk_heat_map",
+    description=(
+        "Generate a risk heat map showing control coverage by risk grouping. "
+        "Identifies which risk areas have the weakest control coverage. "
+        "Use this to answer questions like 'Which risk areas are most under-controlled?' or "
+        "'Show me a risk heat map for our compliance program.'"
+    ),
+)
+def generate_risk_heat_map(
+    risk_grouping: str | None = None,
+) -> dict:
+    """Generate a risk heat map by risk grouping.
+
+    Args:
+        risk_grouping: Optional filter for a specific risk grouping.
+
+    Returns:
+        Heat map data with risk density, control coverage, and heat levels.
+    """
+    session = _get_session()
+    try:
+        svc = RiskIntelligenceService(session)
+        return svc.generate_risk_heat_map(risk_grouping=risk_grouping)
+    except Exception as exc:
+        logger.exception("generate_risk_heat_map failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 12: audit_readiness_report
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="audit_readiness_report",
+    description=(
+        "Generate a comprehensive audit preparation pack for a compliance framework. "
+        "Includes: control inventory with assessment objectives, evidence checklist "
+        "grouped by audit effort, compensating control alternatives, evidence gaps, "
+        "and an audit readiness assessment with recommendations. "
+        "Use this to prepare for an upcoming compliance audit or assessment."
+    ),
+)
+def audit_readiness_report(
+    framework_id: int | None = None,
+    framework_name: str | None = None,
+    domain: str | None = None,
+) -> dict:
+    """Generate an audit preparation pack.
+
+    Args:
+        framework_id: Internal framework ID.
+        framework_name: Natural framework name.
+        domain: Optional SCF domain code to narrow scope.
+
+    Returns:
+        Audit preparation pack with control details, evidence gaps, and readiness score.
+    """
+    session = _get_session()
+    try:
+        svc = EvidenceIntelligenceService(session)
+        return svc.generate_audit_preparation_pack(
+            framework_id=framework_id,
+            framework_name=framework_name,
+            domain=domain,
+        )
+    except Exception as exc:
+        logger.exception("audit_readiness_report failed")
         return {"error": str(exc)}
     finally:
         session.close()

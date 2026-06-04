@@ -151,7 +151,7 @@ def check_for_updates(session: Session | None = None) -> GitHubCheckResult:
         latest_import = (
             session.query(ImportRun)
             .filter(ImportRun.latest_github_tag.isnot(None))
-            .order_by(ImportRun.created_at.desc())
+            .order_by(ImportRun.started_at.desc())
             .first()
         )
         current_tag = latest_import.latest_github_tag if latest_import else None

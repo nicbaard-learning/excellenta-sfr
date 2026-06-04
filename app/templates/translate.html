@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Framework Translation{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Framework Translation Engine</h1>
+  <p>Translate controls between compliance frameworks using 41,000+ STRM-annotated cross-mappings. See what you already have, what you're missing, and what to implement next.</p>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Translate Between Frameworks</div>
+  <div class="card-body">
+    <form id="translate-form">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="src_fw">Source Framework (what you have)</label>
+          <input type="text" name="source" id="src_fw" placeholder="e.g. ISO 27001" value="{{ request.query_params.get('source', '') }}" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="tgt_fw">Target Framework (what you need)</label>
+          <input type="text" name="target" id="tgt_fw" placeholder="e.g. POPIA" value="{{ request.query_params.get('target', '') }}" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="trans_domain">Domain (optional)</label>
+          <input type="text" name="domain" id="trans_domain" placeholder="e.g. IR" style="width:100%;">
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:12px;align-items:center;">
+        <button type="submit" class="btn">Translate</button>
+        <span id="trans-loading" class="loading" style="display:none;padding:0;">Translating...</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="translate-results"></div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Control Equivalency Lookup</div>
+  <div class="card-body">
+    <form id="equiv-form">
+      <div class="form-group" style="margin:0;">
+        <label for="equiv_scf_id">SCF Control ID</label>
+        <input type="text" name="scf_id" id="equiv_scf_id" placeholder="e.g. AC-01-01" style="width:100%;max-width:400px;">
+      </div>
+      <div style="margin-top:12px;">
+        <button type="submit" class="btn">Find Equivalents</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="equiv-results"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('translate-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const src = document.getElementById('src_fw').value;
+    const tgt = document.getElementById('tgt_fw').value;
+    const domain = document.getElementById('trans_domain').value;
+    const loading = document.getElementById('trans-loading');
+    const results = document.getElementById('translate-results');
+
+    if (!src || !tgt) { results.innerHTML = '<div class="error">Provide both source and target frameworks.</div>'; return; }
+    
+    loading.style.display = 'inline';
+    results.innerHTML = '';
+
+    let url = `/api/translate/framework?source_framework_name=${encodeURIComponent(src)}&target_framework_name=${encodeURIComponent(tgt)}`;
+    if (domain) url += `&domain=${encodeURIComponent(domain)}`;
+
+    try {
+      const resp = await fetch(url);
+      const data = await resp.json();
+      loading.style.display = 'none';
+      renderTranslation(data, results);
+    } catch (err) {
+      loading.style.display = 'none';
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+
+  document.getElementById('equiv-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const scfId = document.getElementById('equiv_scf_id').value;
+    const results = document.getElementById('equiv-results');
+    results.innerHTML = '<div class="loading">Looking up equivalents...</div>';
+
+    try {
+      const resp = await fetch(`/api/translate/control-equivalents?scf_id=${encodeURIComponent(scfId)}`);
+      const data = await resp.json();
+      renderEquivalents(data, results);
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+});
+
+function renderTranslation(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+
+  const summary = data.summary || {};
+  const coverageColor = summary.coverage_percentage >= 70 ? 'success' : summary.coverage_percentage >= 40 ? 'warn' : '';
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>${data.translation?.source?.name} → ${data.translation?.target?.name}</span>
+        <span class="badge ${coverageColor}">${summary.coverage_percentage}% Coverage</span>
+      </div>
+      <div class="card-body">
+        <div class="stats">
+          <div class="stat"><div class="stat-value">${summary.already_covered || 0}</div><div class="stat-label">Already Covered</div></div>
+          <div class="stat"><div class="stat-value">${summary.missing_controls || 0}</div><div class="stat-label">Missing Controls</div></div>
+          <div class="stat"><div class="stat-value">${summary.source_unique || 0}</div><div class="stat-label">Unique to Source</div></div>
+        </div>
+      </div>
+    </div>`;
+
+  // Missing controls
+  if (data.implementation_order?.length) {
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <span>Suggested Implementation Order</span>
+          <span class="badge warn">${data.implementation_order.length} items</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+            Prioritized by control weight — higher weight = higher priority.
+          </p>
+          <table>
+            <thead><tr><th>SCF #</th><th>Title</th><th>Domain</th><th>Weight</th><th>Mapped ID</th></tr></thead>
+            <tbody>
+              ${data.implementation_order.map(c => `<tr>
+                <td class="scf-id"><a href="/controls/${c.scf_id}">${c.scf_id}</a></td>
+                <td>${c.title}</td>
+                <td>${c.domain_code || '—'}</td>
+                <td>${c.relative_weighting || '—'}</td>
+                <td><code>${c.mapped_control_id || '—'}</code></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  // Already covered
+  if (data.already_covered?.length) {
+    html += `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <span>Already Covered Controls</span>
+          <span class="badge success">${data.already_covered.length}</span>
+        </div>
+        <div class="card-body table-wrap">
+          <table>
+            <thead><tr><th>SCF #</th><th>Title</th><th>Domain</th><th>Source ID</th><th>Target ID</th><th>Relationship</th></tr></thead>
+            <tbody>
+              ${data.already_covered.map(c => `<tr>
+                <td class="scf-id"><a href="/controls/${c.scf_id}">${c.scf_id}</a></td>
+                <td>${c.title}</td>
+                <td>${c.domain_code || '—'}</td>
+                <td><code>${c.source_mapped_id || '—'}</code></td>
+                <td><code>${c.target_mapped_id || '—'}</code></td>
+                <td style="font-size:12px;">${c.relationship || '—'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function renderEquivalents(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span><code>${data.control?.scf_id}</code> — ${data.control?.title}</span>
+        <span class="badge primary">${data.total_frameworks} frameworks</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">${data.control?.description || ''}</p>
+        <table>
+          <thead><tr><th>Framework</th><th>Mapped ID</th><th>STRM Type</th><th>Relationship</th></tr></thead>
+          <tbody>
+            ${data.equivalents.map(e => {
+              const strmClass = e.strm_type === 'EQUAL' ? 'success' : e.strm_type === 'SUPERSET OF' ? 'primary' : e.strm_type === 'SUBSET OF' ? 'warn' : '';
+              return `<tr>
+                <td><code>${e.framework_code}</code></td>
+                <td><code>${e.mapped_control_id || '—'}</code></td>
+                <td>${e.strm_type ? `<span class="badge ${strmClass}">${e.strm_type}</span>` : '—'}</td>
+                <td style="font-size:12px;">${e.relationship_description || '—'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  container.innerHTML = html;
+}
+</script>
+
+{% endblock %}

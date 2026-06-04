@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Compliance Intelligence Engine{% endblock %}
+{% block content %}
+
+<div class="hero-section">
+  <div class="hero-content">
+    <h1>Compliance Intelligence Engine</h1>
+    <p class="hero-subtitle">Turn compliance data into action. Evidence checklists, framework translation, maturity scoring, risk intelligence, and implementation roadmaps — all powered by the Secure Controls Framework.</p>
+    <div class="hero-actions">
+      <a href="/evidence" class="btn btn-hero">What Evidence Do I Need?</a>
+      <a href="/translate" class="btn btn-hero-secondary">Translate Frameworks</a>
+    </div>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <div class="hero-stat-value">3,332+</div>
+      <div class="hero-stat-label">Canonical Controls</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-value">41,000+</div>
+      <div class="hero-stat-label">Cross-Framework Mappings</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-value">170+</div>
+      <div class="hero-stat-label">Compliance Frameworks</div>
+    </div>
+  </div>
+</div>
+
+<div class="action-grid">
+  <a href="/evidence" class="action-card card-evidence">
+    <div class="action-icon">📋</div>
+    <div class="action-title">Evidence Intelligence</div>
+    <div class="action-desc">Generate evidence checklists, audit packs, and readiness scores for any framework.</div>
+    <div class="action-examples">
+      <span>“What evidence do I need for POPIA?”</span>
+      <span>“Am I ready for an audit?”</span>
+    </div>
+  </a>
+
+  <a href="/translate" class="action-card card-translate">
+    <div class="action-icon">🔁</div>
+    <div class="action-title">Framework Translation</div>
+    <div class="action-desc">Translate between frameworks using 41,000+ STRM-annotated cross-mappings.</div>
+    <div class="action-examples">
+      <span>“What additional controls for POPIA if we have ISO 27001?”</span>
+      <span>“Find NIST equivalent of AC-01-01”</span>
+    </div>
+  </a>
+
+  <a href="/maturity" class="action-card card-maturity">
+    <div class="action-icon">📊</div>
+    <div class="action-title">Maturity Assessment</div>
+    <div class="action-desc">Score your compliance posture using SCR-CMM maturity levels and weighted controls.</div>
+    <div class="action-examples">
+      <span>“POPIA: 72% — top gaps in Incident Response”</span>
+      <span>“Dashboard across 5 frameworks”</span>
+    </div>
+  </a>
+
+  <a href="/roadmap" class="action-card card-roadmap">
+    <div class="action-icon">🗺️</div>
+    <div class="action-title">Compliance Roadmap</div>
+    <div class="action-desc">Generate 30/90/180-day implementation plans tailored to your firm size and maturity.</div>
+    <div class="action-examples">
+      <span>“30-day plan for a small SaaS company”</span>
+      <span>“Prioritized by control weighting”</span>
+    </div>
+  </a>
+
+  <a href="/risk-intelligence" class="action-card card-risk">
+    <div class="action-icon">🛡️</div>
+    <div class="action-title">Risk Intelligence</div>
+    <div class="action-desc">Map risks to controls, view heat maps, and assess residual risk posture.</div>
+    <div class="action-examples">
+      <span>“What controls reduce vendor data leakage?”</span>
+      <span>“Show me the risk heat map”</span>
+    </div>
+  </a>
+
+  <a href="/recommend" class="action-card card-recommend">
+    <div class="action-icon">🎯</div>
+    <div class="action-title">Framework Recommendations</div>
+    <div class="action-desc">Find the right compliance frameworks for your jurisdiction, business model, and industry.</div>
+    <div class="action-examples">
+      <span>“What applies to a SA SaaS company?”</span>
+      <span>“Compare NIST CSF vs ISO 27001”</span>
+    </div>
+  </a>
+</div>
+
+<div class="quick-links">
+  <h2>Quick Actions</h2>
+  <div class="quick-links-grid">
+    <a href="/evidence?framework_name=POPIA" class="quick-link">
+      <span class="quick-link-icon">📋</span>
+      <span class="quick-link-text">POPIA Evidence Checklist</span>
+    </a>
+    <a href="/translate?source=ISO27001&target=POPIA" class="quick-link">
+      <span class="quick-link-icon">🔁</span>
+      <span class="quick-link-text">ISO 27001 → POPIA</span>
+    </a>
+    <a href="/maturity?fw=POPIA" class="quick-link">
+      <span class="quick-link-icon">📊</span>
+      <span class="quick-link-text">Assess POPIA Maturity</span>
+    </a>
+    <a href="/roadmap?fw=POPIA&size=small" class="quick-link">
+      <span class="quick-link-icon">🗺️</span>
+      <span class="quick-link-text">POPIA Roadmap (Small)</span>
+    </a>
+    <a href="/risk-intelligence?q=vendor+data+leakage" class="quick-link">
+      <span class="quick-link-icon">🛡️</span>
+      <span class="quick-link-text">Vendor Data Leakage Risks</span>
+    </a>
+    <a href="/compare" class="quick-link">
+      <span class="quick-link-icon">⚖️</span>
+      <span class="quick-link-text">Compare Two Frameworks</span>
+    </a>
+  </div>
+</div>
+
+{% endblock %}

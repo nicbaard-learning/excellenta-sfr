@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Maturity Assessment{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Maturity Assessment Engine</h1>
+  <p>Score your compliance posture using SCR-CMM maturity levels (0-5) and weighted controls. Identify domain-level gaps and track progress across multiple frameworks.</p>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">SCR-CMM Maturity Model</div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+      <div class="stat"><div class="stat-value">Level 0</div><div class="stat-label">Incomplete</div></div>
+      <div class="stat"><div class="stat-value">Level 1</div><div class="stat-label">Performed</div></div>
+      <div class="stat"><div class="stat-value">Level 2</div><div class="stat-label">Managed</div></div>
+      <div class="stat"><div class="stat-value">Level 3</div><div class="stat-label">Defined</div></div>
+      <div class="stat"><div class="stat-value">Level 4</div><div class="stat-label">Quant. Managed</div></div>
+      <div class="stat"><div class="stat-value">Level 5</div><div class="stat-label">Optimizing</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Assess Framework Maturity</div>
+  <div class="card-body">
+    <form id="maturity-form">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="mat_fw">Framework</label>
+          <input type="text" name="framework_name" id="mat_fw" placeholder="e.g. POPIA, ISO 27001" value="{{ request.query_params.get('fw', '') }}" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn" style="width:100%;">View Maturity Baseline</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="maturity-results"></div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">Multi-Framework Compliance Dashboard</div>
+  <div class="card-body">
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+      Compare compliance posture across multiple frameworks. Enter frameworks separated by commas.
+    </p>
+    <form id="dashboard-form">
+      <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;">
+          <label for="dash_fws">Frameworks</label>
+          <input type="text" name="frameworks" id="dash_fws" placeholder="e.g. POPIA, ISO 27001, PCI-DSS" style="width:100%;">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn" style="width:100%;">View Dashboard</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="dashboard-results"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('maturity-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fw = document.getElementById('mat_fw').value;
+    const results = document.getElementById('maturity-results');
+    results.innerHTML = '<div class="loading">Loading maturity baseline...</div>';
+
+    try {
+      const resp = await fetch(`/api/maturity/assess?framework_name=${encodeURIComponent(fw)}`);
+      const data = await resp.json();
+      renderMaturity(data, results);
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+
+  document.getElementById('dashboard-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fws = document.getElementById('dash_fws').value.split(',').map(s => s.trim()).filter(Boolean);
+    const results = document.getElementById('dashboard-results');
+    results.innerHTML = '<div class="loading">Building dashboard...</div>';
+
+    try {
+      // Load each framework's maturity baseline in parallel
+      const assessments = {};
+      for (const fw of fws) {
+        const resp = await fetch(`/api/maturity/assess?framework_name=${encodeURIComponent(fw)}`);
+        const data = await resp.json();
+        if (data.control_breakdown) {
+          assessments[fw] = {};
+          for (const c of data.control_breakdown) {
+            assessments[fw][c.scf_id] = 0; // All at Level 0 for baseline
+          }
+        }
+      }
+
+      if (Object.keys(assessments).length === 0) {
+        results.innerHTML = '<div class="empty"><p>No frameworks found. Check the names and try again.</p></div>';
+        return;
+      }
+
+      const dashResp = await fetch('/api/maturity/dashboard', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ assessments }),
+      });
+      const dashData = await dashResp.json();
+      renderDashboard(dashData, results);
+    } catch (err) {
+      results.innerHTML = `<div class="error">Failed: ${err.message}</div>`;
+    }
+  });
+});
+
+function renderMaturity(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+
+  setupMaturityInteractive(data, container);
+}
+
+function setupMaturityInteractive(data, container) {
+  const breakdown = data.control_breakdown || [];
+  const byDomain = data.by_domain || {};
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>${data.framework?.name || 'Framework'} — Maturity Baseline</span>
+        <span class="badge primary">${breakdown.length} controls</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+          Scoring Methodology: ${data.scoring_methodology?.formula || 'SCR-CMM weighted average'}
+        </p>
+        
+        <h3 style="font-size:14px;margin-bottom:8px;">Domain-Level Scores</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;">
+          ${Object.entries(byDomain).map(([dc, info]) => {
+            const sc = info.score || 0;
+            const cls = sc >= 70 ? 'success' : sc >= 40 ? 'warn' : '';
+            return `<div class="stat"><div class="stat-value">${sc}%</div><div class="stat-label">${dc} (${info.control_count}) <span class="badge ${cls}"></span></div></div>`;
+          }).join('')}
+        </div>
+
+        <h3 style="font-size:14px;margin-bottom:8px;">Control Breakdown</h3>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+          This is the theoretical maturity framework. To compute actual scores, use the MCP tool or POST API with assessed maturity levels.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>SCF #</th><th>Title</th><th>Domain</th><th>Weight</th></tr></thead>
+            <tbody>
+              ${breakdown.slice(0, 50).map(c => `<tr>
+                <td class="scf-id"><a href="/controls/${c.scf_id}">${c.scf_id}</a></td>
+                <td>${c.title}</td>
+                <td>${c.domain_code || '—'}</td>
+                <td>${c.relative_weighting || '1.0'}</td>
+              </tr>`).join('')}
+              ${breakdown.length > 50 ? `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">…and ${breakdown.length - 50} more</td></tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  container.innerHTML = html;
+}
+
+function renderDashboard(data, container) {
+  if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
+
+  const summary = data.summary || {};
+  const dashboards = data.dashboard || [];
+
+  let html = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span>Compliance Dashboard — ${data.frameworks_assessed} Frameworks</span>
+      </div>
+      <div class="card-body">
+        <div class="stats">
+          <div class="stat"><div class="stat-value">${summary.average_score || 0}%</div><div class="stat-label">Average Score</div></div>
+          <div class="stat"><div class="stat-value">${summary.highest_score || 0}%</div><div class="stat-label">Highest Score</div></div>
+          <div class="stat"><div class="stat-value">${summary.lowest_score || 0}%</div><div class="stat-label">Lowest Score</div></div>
+        </div>
+
+        <table>
+          <thead><tr><th>Framework</th><th>Score</th><th>Top Gaps</th></tr></thead>
+          <tbody>
+            ${dashboards.map(d => {
+              const scoreClass = d.overall_score >= 70 ? 'success' : d.overall_score >= 40 ? 'warn' : '';
+              const gaps = d.top_gaps?.map(g => g.domain_code).filter(Boolean);
+              const uniqueGaps = [...new Set(gaps)].slice(0, 3);
+              return `<tr>
+                <td><strong>${d.framework_code}</strong></td>
+                <td><span class="badge ${scoreClass}" style="font-size:13px;padding:4px 12px;">${d.overall_score}%</span></td>
+                <td style="font-size:12px;">${uniqueGaps.join(', ') || '—'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+
+  // Cross-cutting gaps
+  if (data.cross_cutting_gaps?.length) {
+    html += `
+      <h3 style="font-size:14px;margin-top:16px;margin-bottom:8px;">Cross-Cutting Gaps</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+        Controls that are weak across multiple frameworks — highest priority for remediation.
+      </p>
+      <table>
+        <thead><tr><th>SCF #</th><th>Affected Frameworks</th></tr></thead>
+        <tbody>
+          ${data.cross_cutting_gaps.slice(0, 10).map(g => `<tr>
+            <td class="scf-id"><a href="/controls/${g.scf_id}">${g.scf_id}</a></td>
+            <td><span class="badge warn">${g.affected_frameworks} frameworks</span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  html += `</div></div>`;
+  container.innerHTML = html;
+}
+</script>
+
+{% endblock %}

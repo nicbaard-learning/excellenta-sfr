@@ -25,6 +25,80 @@ templates = Jinja2Templates(directory="app/templates")
 router = APIRouter(tags=["UI"])
 
 
+@router.get("/")
+async def home(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """New landing page – Compliance Intelligence Engine."""
+    return templates.TemplateResponse(
+        "home.html",
+        {"request": request},
+    )
+
+
+# Remove the old index redirect (home takes over)
+
+@router.get("/evidence")
+async def evidence_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Evidence Intelligence page."""
+    return templates.TemplateResponse(
+        "evidence.html",
+        {"request": request},
+    )
+
+
+@router.get("/translate")
+async def translate_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Framework Translation page."""
+    return templates.TemplateResponse(
+        "translate.html",
+        {"request": request},
+    )
+
+
+@router.get("/maturity")
+async def maturity_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Maturity Assessment page."""
+    return templates.TemplateResponse(
+        "maturity.html",
+        {"request": request},
+    )
+
+
+@router.get("/roadmap")
+async def roadmap_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Compliance Roadmap page."""
+    return templates.TemplateResponse(
+        "roadmap.html",
+        {"request": request},
+    )
+
+
+@router.get("/risk-intelligence")
+async def risk_intelligence_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Risk Intelligence page."""
+    return templates.TemplateResponse(
+        "risk_intelligence.html",
+        {"request": request},
+    )
+
+
 @router.get("/about")
 async def about(
     request: Request,

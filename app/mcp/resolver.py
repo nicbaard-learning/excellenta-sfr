@@ -60,8 +60,8 @@ KNOWN_ALIASES: dict[str, str] = {
     "nist 800-171a": "NIST-800-171A",
     # Privacy
     "gdpr": "GDPR",
-    "popia": "POPIA",
-    "popi": "POPIA",
+    "popia": "EMEA-ZA",
+    "popi": "EMEA-ZA",
     "ccpa": "CCPA",
     "lgpd": "LGPD",
     "hipaa": "HIPAA",
