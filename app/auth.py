@@ -25,8 +25,7 @@ import urllib.parse
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from starlette.responses import Response
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.config import settings
 
@@ -223,7 +222,12 @@ async def oauth_authorize(
 
 @router.post("/oauth/approve")
 async def oauth_approve(request: Request):
-    """Handle the authorization consent form submission."""
+    """Handle the authorization consent form submission.
+
+    Instead of redirecting (which many MCP clients don't handle),
+    shows the authorization code on a success page for the user to
+    copy and paste into their MCP client.
+    """
     form = await request.form()
     action = form.get("action", "")
     client_id = form.get("client_id", "")
@@ -246,10 +250,61 @@ async def oauth_approve(request: Request):
         "expires_at": time.time() + AUTH_CODE_EXPIRY,
     }
 
-    # Redirect back to Claude.ai with the code
-    params = {"code": code, "state": state}
-    redirect_target = f"{redirect_uri}?{urllib.parse.urlencode(params)}"
-    return RedirectResponse(url=redirect_target)
+    # Show success page with the code — user copies it into their MCP client
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authorization Successful</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: #f0fdf4; display: flex; justify-content: center; align-items: center;
+           min-height: 100vh; margin: 0; }}
+    .card {{ background: white; border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.1);
+             padding: 40px; max-width: 520px; width: 90%; text-align: center; }}
+    .icon {{ font-size: 48px; margin-bottom: 16px; }}
+    h1 {{ font-size: 22px; margin-bottom: 8px; color: #166534; }}
+    p {{ color: #666; font-size: 14px; line-height: 1.5; margin-bottom: 20px; }}
+    .code-box {{ background: #f9f9f9; border: 2px dashed #22c55e; border-radius: 8px;
+                 padding: 16px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+                 font-size: 14px; word-break: break-all; user-select: all;
+                 margin-bottom: 20px; cursor: pointer; }}
+    .code-box:hover {{ background: #f0fdf4; }}
+    .hint {{ font-size: 12px; color: #999; }}
+    .btn {{ display: inline-block; padding: 10px 24px; border-radius: 8px;
+            font-size: 14px; font-weight: 600; border: none; cursor: pointer;
+            background: #22c55e; color: white; text-decoration: none; }}
+    .btn:hover {{ background: #16a34a; }}
+    .state-info {{ font-size: 11px; color: #999; margin-top: 16px; padding-top: 16px;
+                   border-top: 1px solid #eee; }}
+  </style>
+  <script>
+    function copyCode() {{
+      const code = document.getElementById('auth-code');
+      navigator.clipboard.writeText(code.textContent).then(() => {{
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => {{ btn.textContent = 'Copy Code'; }}, 3000);
+      }});
+    }}
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✅</div>
+    <h1>Authorization Successful</h1>
+    <p>Your MCP connection has been authorized. Copy the code below and paste it into your client (Perplexity, Claude, etc.) to complete the connection.</p>
+    <div class="code-box" id="auth-code" onclick="copyCode()">{code}</div>
+    <button class="btn" id="copy-btn" onclick="copyCode()">Copy Code</button>
+    <p class="hint">Click the code or the button to copy it, then return to Perplexity (or your MCP client) and paste it where prompted. This code expires in 5 minutes.</p>
+    <div class="state-info">
+      Client ID: {client_id}
+    </div>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(html)
 
 
 @router.post("/oauth/token")

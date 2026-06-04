@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -36,8 +35,6 @@ async def home(
         {"request": request},
     )
 
-
-# Remove the old index redirect (home takes over)
 
 @router.get("/evidence")
 async def evidence_page(
@@ -136,11 +133,6 @@ async def about(
         {"request": request, "stats": stats},
     )
 
-
-@router.get("/")
-async def index():
-    """Redirect to the framework list."""
-    return RedirectResponse(url="/frameworks")
 
 
 @router.get("/frameworks")
