@@ -15,14 +15,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.control import Control, Domain
 from app.models.framework import Framework
 from app.models.mapping import ControlMapping
 from app.models.risk import Risk, RiskControlLink
 from app.models.threat import Threat, ThreatControlLink
+from app.services.risk_matcher import SemanticRiskMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -40,42 +41,88 @@ class RiskIntelligenceService:
         risk_id: int | None = None,
         risk_keyword: str | None = None,
     ) -> dict:
-        """Find controls that mitigate a specific risk, using keyword matching.
+        """Find controls that mitigate a specific risk, using semantic matching.
 
-        Since RiskControlLink and ThreatControlLink tables exist but may not be populated,
-        this uses intelligent keyword matching between risk descriptions and control data.
+        Uses a multi-strategy semantic matching pipeline:
+        1. Synonym dictionary (business language -> risk catalog terms)
+        2. Token overlap scoring
+        3. Risk grouping / category matching
+        4. Fuzzy fallback with difflib
+
+        Each result includes a confidence score so users can assess match quality.
 
         Args:
             risk_id: Specific risk ID to look up.
-            risk_keyword: Free-text search for risks (e.g. 'vendor data leakage', 'ransomware').
+            risk_keyword: Free-text search in business language
+                (e.g. 'vendor data leakage', 'ransomware', 'insider threat').
 
         Returns:
-            Matching risks with their mitigating controls and suggested actions.
+            Matching risks with confidence scores, controls, frameworks, and mitigations.
         """
         if risk_id:
             risks = [self.session.query(Risk).filter(Risk.id == risk_id).first()]
-        elif risk_keyword:
-            pattern = f"%{risk_keyword}%"
-            risks = (
-                self.session.query(Risk)
-                .filter(
-                    Risk.risk_title.ilike(pattern)
-                    | Risk.risk_description.ilike(pattern)
-                    | Risk.risk_grouping.ilike(pattern)
-                )
-                .order_by(Risk.risk_number)
-                .all()
-            )
-        else:
+            risks = [r for r in risks if r is not None]
+            if not risks:
+                return {"error": f"Risk with ID {risk_id} not found."}
+
+            # Direct lookup — full confidence
+            return self._build_risk_results(risks, overall_confidence=1.0, match_method="direct_lookup")
+
+        if not risk_keyword:
             return {"error": "Provide either risk_id or risk_keyword."}
 
-        risks = [r for r in risks if r is not None]
-        if not risks:
-            return {"error": f"No risks found matching the criteria."}
+        # Semantic matching pipeline
+        matcher = SemanticRiskMatcher(self.session)
+        match_result = matcher.match(risk_keyword)
 
+        if not match_result["matched_risks"]:
+            return {
+                "error": f"No risks found matching '{risk_keyword}'.",
+                "confidence": match_result["confidence"],
+                "fallback": match_result.get("fallback"),
+                "suggestion": "Try a broader term or browse risk categories: Access Control, Asset Management, Business Continuity, Exposure, Governance, Incident Response, Situational Awareness, Supply Chain",
+            }
+
+        # Extract matched risk IDs, preserving confidence from matcher
+        matched_risk_ids = [r["risk_id"] for r in match_result["matched_risks"]]
+        confidence_map = {r["risk_id"]: r["confidence"] for r in match_result["matched_risks"]}
+
+        risks = (
+            self.session.query(Risk)
+            .filter(Risk.id.in_(matched_risk_ids))
+            .all()
+        )
+        # Restore sort order from matcher
+        risk_order = {rid: i for i, rid in enumerate(matched_risk_ids)}
+        risks.sort(key=lambda r: risk_order.get(r.id, 999))
+
+        confidence = match_result["confidence"]
+        method = confidence["method"]
+
+        return self._build_risk_results(
+            risks,
+            overall_confidence=confidence["score"],
+            match_method=method,
+            confidence_tier=confidence["tier"],
+            confidence_interpretation=confidence["interpretation"],
+            individual_confidences=confidence_map,
+            fallback=match_result.get("fallback"),
+        )
+
+    def _build_risk_results(
+        self,
+        risks: list,
+        overall_confidence: float = 1.0,
+        match_method: str = "direct_lookup",
+        confidence_tier: str = "HIGH",
+        confidence_interpretation: str = "",
+        individual_confidences: dict[int, float] | None = None,
+        fallback: dict | None = None,
+    ) -> dict:
+        """Build the standard risk results response from a list of risk ORM objects."""
         results = []
         for risk in risks:
-            # First, try direct links via RiskControlLink
+            # Try direct links via RiskControlLink first
             linked_control_ids = {
                 r[0] for r in
                 self.session.query(RiskControlLink.control_id)
@@ -83,16 +130,15 @@ class RiskIntelligenceService:
                 .all()
             }
 
-            # If no direct links, use keyword matching
+            # If no direct links, use keyword matching against risk text
             if not linked_control_ids:
                 linked_control_ids = self._find_controls_by_keyword(
                     risk.risk_title or "",
                     risk.risk_description or "",
+                    (risk.risk_grouping or ""),
                 )
 
             controls = self._get_control_details(linked_control_ids)
-
-            # Also find relevant frameworks that map to these controls
             framework_codes = self._get_frameworks_for_controls(linked_control_ids)
 
             # Find related threats
@@ -106,14 +152,21 @@ class RiskIntelligenceService:
                 .all()
             )
 
+            risk_confidence = (individual_confidences or {}).get(risk.id, overall_confidence)
+
             results.append({
                 "risk": {
+                    "id": risk.id,
                     "number": risk.risk_number,
                     "grouping": risk.risk_grouping,
                     "title": risk.risk_title,
                     "description": risk.risk_description,
                     "nist_csf_function": risk.nist_csf_function,
                     "materiality": risk.materiality_considerations,
+                },
+                "confidence": {
+                    "score": round(risk_confidence, 2),
+                    "tier": self._confidence_tier(risk_confidence),
                 },
                 "mitigating_controls": {
                     "count": len(controls),
@@ -131,7 +184,33 @@ class RiskIntelligenceService:
                 "remediation_suggestions": self._generate_remediation_suggestions(controls),
             })
 
-        return {"results": results, "total": len(results)}
+        response: dict[str, Any] = {
+            "results": results,
+            "total": len(results),
+            "query_confidence": {
+                "score": round(overall_confidence, 2),
+                "tier": confidence_tier,
+                "method": match_method,
+                "interpretation": confidence_interpretation or (
+                    f"Matched via {match_method}"
+                ),
+            },
+        }
+
+        if fallback:
+            response["fallback"] = fallback
+
+        return response
+
+    @staticmethod
+    def _confidence_tier(score: float) -> str:
+        if score >= 0.8:
+            return "HIGH"
+        if score >= 0.5:
+            return "MEDIUM"
+        if score >= 0.2:
+            return "LOW"
+        return "NO_MATCH"
 
     # ── Risk Heat Map ──────────────────────────────────────────────
 
@@ -338,10 +417,10 @@ class RiskIntelligenceService:
 
     # ── Private Helpers ─────────────────────────────────────────────
 
-    def _find_controls_by_keyword(self, title: str, description: str) -> set[int]:
+    def _find_controls_by_keyword(self, title: str, description: str, grouping: str = "") -> set[int]:
         """Find control IDs that are relevant to a risk based on keyword matching."""
         keywords = set()
-        for text in [title, description]:
+        for text in [title, description, grouping]:
             if not text:
                 continue
             # Extract key words from risk title/description
@@ -360,7 +439,6 @@ class RiskIntelligenceService:
         if not keywords:
             return set()
 
-        from sqlalchemy import or_
         conditions = []
         for kw in keywords:
             pattern = f"%{kw}%"
