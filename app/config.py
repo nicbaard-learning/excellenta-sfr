@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     # ── MCP ────────────────────────────────────────────────────────────
     mcp_api_key: str = ""
 
+    # OAuth 2.0 settings for Claude.ai connector integration.
+    # Set these via environment variables for production.
+    mcp_oauth_client_id: str = "sfr-mcp"
+    mcp_oauth_client_secret: str = ""
+    mcp_jwt_secret: str = ""
+    mcp_oauth_base_url: str = "https://excellenta-sfr.onrender.com"
+
     # Allowed Host header values for the MCP transport (DNS rebinding protection).
     # Comma-separated list; set via the MCP_ALLOWED_HOSTS env var.
     # Supports exact hostnames and port-wildcard patterns like "localhost:*".

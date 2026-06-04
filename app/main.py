@@ -24,6 +24,7 @@ try:
     # ── Register API routers ──────────────────────────────────────────────
     from app.api import frameworks, controls, compare, recommend, reference, system, evidence, translation, maturity, roadmap, risk_intelligence  # noqa: E402
     from app.ui import router as ui_router  # noqa: E402
+    from app.auth import router as oauth_router  # noqa: E402
     from dotenv import load_dotenv
     import os
     
@@ -119,6 +120,13 @@ try:
     app.include_router(maturity.router)
     app.include_router(roadmap.router)
     app.include_router(risk_intelligence.router)
+
+    # ── OAuth 2.0 ────────────────────────────────────────────────────────
+    # Endpoints for Claude.ai connector authentication.
+    # Auto-discovery: GET /.well-known/oauth-authorization-server
+    # Auth flow:      GET  /oauth/authorize
+    #                 POST /oauth/token
+    app.include_router(oauth_router)
 
     # ── MCP (SSE transport) ──────────────────────────────────────────────
     # Mounts the Model Context Protocol server for AI-agent access.

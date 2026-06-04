@@ -781,11 +781,14 @@ def create_sse_app():
         app.mount("/mcp", create_sse_app())
 
     The MCP client connects via GET /mcp/sse and sends messages via POST /mcp/messages.
+    Authentication is handled by MCPAuthMiddleware (Bearer token required).
     """
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.cors import CORSMiddleware
     from starlette.routing import Mount
+
+    from app.auth import MCPAuthMiddleware
 
     sse = mcp.sse_app()
 
@@ -800,6 +803,7 @@ def create_sse_app():
                 allow_methods=["*"],
                 allow_headers=["*"],
             ),
+            Middleware(MCPAuthMiddleware),
         ],
     )
 
