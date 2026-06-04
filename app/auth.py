@@ -202,11 +202,11 @@ async def oauth_authorize(
       </dl>
     </div>
     <form method="POST" action="/oauth/approve">
-      <input type="hidden" name="client_id" value="{urllib.parse.quote(client_id)}">
-      <input type="hidden" name="redirect_uri" value="{urllib.parse.quote(redirect_uri)}">
-      <input type="hidden" name="state" value="{urllib.parse.quote(state)}">
-      <input type="hidden" name="code_challenge" value="{urllib.parse.quote(code_challenge)}">
-      <input type="hidden" name="code_challenge_method" value="{urllib.parse.quote(code_challenge_method)}">
+      <input type="hidden" name="client_id" value="{client_id}">
+      <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+      <input type="hidden" name="state" value="{state}">
+      <input type="hidden" name="code_challenge" value="{code_challenge}">
+      <input type="hidden" name="code_challenge_method" value="{code_challenge_method}">
       <button type="submit" name="action" value="approve" class="btn btn-primary">
         Authorize Connection
       </button>
