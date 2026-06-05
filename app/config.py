@@ -47,9 +47,12 @@ class Settings(BaseSettings):
 
     # Allowed Origin header values for the MCP transport (DNS rebinding protection).
     # Comma-separated list; set via the MCP_ALLOWED_ORIGINS env var.
+    # Supports exact hostnames, port-wildcard patterns ("localhost:*"), and "*"
+    # wildcard to allow any origin (e.g. for MCP clients like Perplexity, Cursor).
     mcp_allowed_origins: str = (
         "http://127.0.0.1,http://127.0.0.1:*,http://localhost,http://localhost:*,"
-        "http://[::1],http://[::1]:*,https://excellenta-sfr.onrender.com"
+        "http://[::1],http://[::1]:*,https://excellenta-sfr.onrender.com,"
+        "https://www.perplexity.ai,https://perplexity.ai,*"
     )
 
     @property

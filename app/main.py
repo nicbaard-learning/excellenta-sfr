@@ -97,7 +97,15 @@ try:
     from starlette.middleware.base import BaseHTTPMiddleware
 
     class ForceConnectionClose(BaseHTTPMiddleware):
+        """Force HTTP/1.1 connections to close after each response.
+
+        Skips SSE endpoints (/mcp/) since SSE requires a persistent connection
+        to stream events (including tool definitions to MCP clients).
+        """
         async def dispatch(self, request, call_next):
+            # SSE requires a persistent connection — skip the Connection: close header
+            if request.url.path.startswith("/mcp/"):
+                return await call_next(request)
             response = await call_next(request)
             response.headers["Connection"] = "close"
             return response
