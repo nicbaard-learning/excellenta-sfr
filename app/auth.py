@@ -25,7 +25,7 @@ import urllib.parse
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.config import settings
 
@@ -140,8 +140,14 @@ async def oauth_authorize(
 ):
     """OAuth 2.0 Authorization Endpoint.
 
-    Claude.ai redirects the user here to approve the connection.
-    Shows a consent page; on approval, redirects back with an auth code.
+    Shows a consent page with two options:
+      1. Auto-Redirect (default) — redirects the browser back to the client's
+         redirect_uri with the code, as per standard OAuth 2.0.
+      2. Manual Code (fallback) — displays the authorization code for the user
+         to copy and paste into their MCP client.
+
+    Perplexity, Cursor, and most MCP clients use the redirect flow.
+    Claude.ai's web connector may need the manual-code fallback.
     """
     # Validate required params
     if response_type != "code":
@@ -154,7 +160,7 @@ async def oauth_authorize(
     if not redirect_uri:
         return HTMLResponse("<h1>Missing redirect_uri</h1>", status_code=400)
 
-    # Render consent page
+    # Render consent page with both flows
     base = _get_base_url(request)
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -163,36 +169,51 @@ async def oauth_authorize(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Authorize MCP Connection</title>
   <style>
+    * {{ box-sizing: border-box; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-           background: #f5f5f5; display: flex; justify-content: center; align-items: center;
-           min-height: 100vh; margin: 0; }}
-    .card {{ background: white; border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.1);
-             padding: 32px; max-width: 420px; width: 90%; text-align: center; }}
-    h1 {{ font-size: 20px; margin-bottom: 8px; }}
-    p {{ color: #666; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }}
-    .btn {{ display: inline-block; padding: 12px 32px; border-radius: 8px;
-            font-size: 15px; font-weight: 600; border: none; cursor: pointer; }}
+           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+           display: flex; justify-content: center; align-items: center;
+           min-height: 100vh; margin: 0; padding: 16px; }}
+    .card {{ background: white; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+             padding: 40px; max-width: 460px; width: 100%; }}
+    .icon {{ font-size: 48px; margin-bottom: 12px; }}
+    h1 {{ font-size: 22px; margin: 0 0 4px; color: #1a1a2e; }}
+    .subtitle {{ color: #666; font-size: 14px; line-height: 1.5; margin: 0 0 24px; }}
+    .details {{ text-align: left; background: #f8f9fa; border-radius: 10px; padding: 16px;
+               margin-bottom: 24px; font-size: 13px; border: 1px solid #e9ecef; }}
+    .details dt {{ font-weight: 600; color: #1a1a2e; margin-top: 8px; }}
+    .details dt:first-child {{ margin-top: 0; }}
+    .details dd {{ margin: 4px 0 0 0; color: #666; word-break: break-all; }}
+    .details dd code {{ background: #e9ecef; padding: 2px 6px; border-radius: 4px;
+                        font-size: 12px; font-family: 'SF Mono', 'Consolas', monospace; }}
+    .btn {{ display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            width: 100%; padding: 14px 24px; border-radius: 10px;
+            font-size: 15px; font-weight: 600; border: none; cursor: pointer;
+            transition: all 0.2s ease; }}    
     .btn-primary {{ background: #0066cc; color: white; }}
-    .btn-primary:hover {{ background: #0052a3; }}
-    .icon {{ font-size: 48px; margin-bottom: 16px; }}
-    code {{ background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 13px; }}
-    .details {{ text-align: left; background: #f9f9f9; border-radius: 8px; padding: 12px;
-               margin-bottom: 24px; font-size: 13px; }}
-    .details dt {{ font-weight: 600; margin-top: 8px; }}
-    .details dd {{ margin: 4px 0 0 20px; color: #666; }}
+    .btn-primary:hover {{ background: #0052a3; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,102,204,0.3); }}
+    .btn-secondary {{ background: white; color: #555; border: 1.5px solid #d0d0d0; margin-top: 10px; }}
+    .btn-secondary:hover {{ background: #f8f9fa; border-color: #b0b0b0; }}
+    .divider {{ display: flex; align-items: center; gap: 12px; margin: 20px 0; color: #aaa; font-size: 13px; }}
+    .divider::before, .divider::after {{ content: ''; flex: 1; height: 1px; background: #e0e0e0; }}
+    .footer {{ text-align: center; margin-top: 20px; padding-top: 16px;
+               border-top: 1px solid #e9ecef; }}
+    .footer a {{ color: #888; font-size: 13px; text-decoration: none; }}
+    .footer a:hover {{ color: #555; text-decoration: underline; }}
+    .badge {{ display: inline-block; background: #e8f4fd; color: #0066cc; font-size: 11px;
+              font-weight: 600; padding: 2px 8px; border-radius: 12px; margin-left: 6px; }}
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">🔐</div>
-    <h1>Authorize MCP Connection</h1>
-    <p>A request was made to connect to the <strong>SFR Compliance Action Engine</strong>
-       from Claude.ai. This will allow Claude to access your compliance data via the
-       following MCP tools:</p>
+    <h1>Authorize Connection</h1>
+    <p class="subtitle">A request was made to connect to the <strong>SFR Compliance Action Engine</strong>.</p>
+
     <div class="details">
       <dl>
         <dt>Application</dt>
-        <dd>Claude.ai (Client ID: <code>{urllib.parse.quote(client_id)}</code>)</dd>
+        <dd><code>{urllib.parse.quote(client_id)}</code></dd>
         <dt>Capabilities</dt>
         <dd>Framework recommendations, evidence checklists, compliance translation,
             maturity assessment, roadmaps, risk intelligence, audit readiness</dd>
@@ -200,20 +221,35 @@ async def oauth_authorize(
         <dd><code>{urllib.parse.quote(redirect_uri)}</code></dd>
       </dl>
     </div>
+
     <form method="POST" action="/oauth/approve">
       <input type="hidden" name="client_id" value="{client_id}">
       <input type="hidden" name="redirect_uri" value="{redirect_uri}">
       <input type="hidden" name="state" value="{state}">
       <input type="hidden" name="code_challenge" value="{code_challenge}">
       <input type="hidden" name="code_challenge_method" value="{code_challenge_method}">
-      <button type="submit" name="action" value="approve" class="btn btn-primary">
-        Authorize Connection
+      <input type="hidden" name="mode" value="redirect" id="mode-input">
+
+      <button type="submit" name="action" value="approve" class="btn btn-primary" onclick="document.getElementById('mode-input').value='redirect'">
+        Authorize &amp; Continue
       </button>
-      <p style="margin-top:12px;font-size:12px;color:#999;">
-        By authorizing, you grant Claude.ai access to read compliance data
-        through the SFR MCP server.
-      </p>
+
+      <div class="divider">or</div>
+
+      <button type="submit" name="action" value="approve" class="btn btn-secondary" onclick="document.getElementById('mode-input').value='manual'">
+        Show Authorization Code
+      </button>
     </form>
+
+    <div class="footer">
+      <a href="#" onclick="document.getElementById('mode-input').value='manual'; this.closest('form').submit(); return false;">
+        Can't connect? Use manual code instead
+      </a>
+    </div>
+    <p style="margin-top:12px;font-size:12px;color:#999;text-align:center;">
+      By authorizing, you grant this client access to read compliance data
+      through the SFR MCP server.
+    </p>
   </div>
 </body>
 </html>"""
@@ -224,9 +260,14 @@ async def oauth_authorize(
 async def oauth_approve(request: Request):
     """Handle the authorization consent form submission.
 
-    Instead of redirecting (which many MCP clients don't handle),
-    shows the authorization code on a success page for the user to
-    copy and paste into their MCP client.
+    Supports two modes (set via the `mode` form field):
+      - "redirect" (default): redirects back to the client's redirect_uri with
+        the code and state (standard OAuth 2.0 Authorization Code flow).
+      - "manual": displays the authorization code on a success page for the
+        user to copy and paste into their MCP client.
+
+    Perplexity, Cursor, and most MCP clients use the redirect flow.
+    Claude.ai's web connector may need the manual-code fallback.
     """
     form = await request.form()
     action = form.get("action", "")
@@ -235,8 +276,9 @@ async def oauth_approve(request: Request):
     state = form.get("state", "")
     code_challenge = form.get("code_challenge", "")
     code_challenge_method = form.get("code_challenge_method", "S256")
+    mode = form.get("mode", "redirect")
 
-    if action != "approve":
+    if action not in ("", "approve"):
         return HTMLResponse("<h1>Authorization declined</h1>", status_code=403)
 
     # Generate single-use auth code
@@ -250,61 +292,17 @@ async def oauth_approve(request: Request):
         "expires_at": time.time() + AUTH_CODE_EXPIRY,
     }
 
-    # Show success page with the code — user copies it into their MCP client
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Authorization Successful</title>
-  <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-           background: #f0fdf4; display: flex; justify-content: center; align-items: center;
-           min-height: 100vh; margin: 0; }}
-    .card {{ background: white; border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.1);
-             padding: 40px; max-width: 520px; width: 90%; text-align: center; }}
-    .icon {{ font-size: 48px; margin-bottom: 16px; }}
-    h1 {{ font-size: 22px; margin-bottom: 8px; color: #166534; }}
-    p {{ color: #666; font-size: 14px; line-height: 1.5; margin-bottom: 20px; }}
-    .code-box {{ background: #f9f9f9; border: 2px dashed #22c55e; border-radius: 8px;
-                 padding: 16px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-                 font-size: 14px; word-break: break-all; user-select: all;
-                 margin-bottom: 20px; cursor: pointer; }}
-    .code-box:hover {{ background: #f0fdf4; }}
-    .hint {{ font-size: 12px; color: #999; }}
-    .btn {{ display: inline-block; padding: 10px 24px; border-radius: 8px;
-            font-size: 14px; font-weight: 600; border: none; cursor: pointer;
-            background: #22c55e; color: white; text-decoration: none; }}
-    .btn:hover {{ background: #16a34a; }}
-    .state-info {{ font-size: 11px; color: #999; margin-top: 16px; padding-top: 16px;
-                   border-top: 1px solid #eee; }}
-  </style>
-  <script>
-    function copyCode() {{
-      const code = document.getElementById('auth-code');
-      navigator.clipboard.writeText(code.textContent).then(() => {{
-        const btn = document.getElementById('copy-btn');
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => {{ btn.textContent = 'Copy Code'; }}, 3000);
-      }});
-    }}
-  </script>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">✅</div>
-    <h1>Authorization Successful</h1>
-    <p>Your MCP connection has been authorized. Copy the code below and paste it into your client (Perplexity, Claude, etc.) to complete the connection.</p>
-    <div class="code-box" id="auth-code" onclick="copyCode()">{code}</div>
-    <button class="btn" id="copy-btn" onclick="copyCode()">Copy Code</button>
-    <p class="hint">Click the code or the button to copy it, then return to Perplexity (or your MCP client) and paste it where prompted. This code expires in 5 minutes.</p>
-    <div class="state-info">
-      Client ID: {client_id}
-    </div>
-  </div>
-</body>
-</html>"""
-    return HTMLResponse(html)
+    if mode == "manual":
+        # Show success page with the code — user copies it into their MCP client
+        html = _manual_code_page(code, client_id)
+        return HTMLResponse(html)
+
+    # Default: redirect back to the client's redirect_uri with the code and state
+    # (standard OAuth 2.0 Authorization Code flow — used by Perplexity, Cursor, etc.)
+    params = urllib.parse.urlencode({"code": code, "state": state})
+    separator = "&" if "?" in redirect_uri else "?"
+    redirect_url = f"{redirect_uri}{separator}{params}"
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 
 @router.post("/oauth/token")
@@ -374,6 +372,93 @@ async def oauth_token(request: Request):
         "expires_in": TOKEN_EXPIRY,
         "scope": "mcp",
     }
+
+
+# ── Manual-code success page ──────────────────────────────────────────
+
+
+def _manual_code_page(code: str, client_id: str) -> str:
+    """Render the manual authorization code page (fallback for clients that
+    can't handle the redirect flow, e.g. Claude.ai's web connector)."""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authorization Successful</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+           display: flex; justify-content: center; align-items: center;
+           min-height: 100vh; margin: 0; padding: 16px; }}
+    .card {{ background: white; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+             padding: 40px; max-width: 520px; width: 100%; text-align: center; }}
+    .icon {{ font-size: 48px; margin-bottom: 12px; }}
+    h1 {{ font-size: 22px; margin: 0 0 4px; color: #166534; }}
+    p {{ color: #666; font-size: 14px; line-height: 1.5; margin: 0 0 20px; }}
+    .code-box {{ background: #f8f9fa; border: 2px dashed #22c55e; border-radius: 10px;
+                 padding: 20px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+                 font-size: 14px; word-break: break-all; user-select: all;
+                 margin-bottom: 20px; cursor: pointer; transition: all 0.2s; }}
+    .code-box:hover {{ background: #f0fdf4; border-color: #16a34a; }}
+    .code-box.copied {{ background: #f0fdf4; border-color: #15803d; }}
+    .hint {{ font-size: 12px; color: #999; margin-bottom: 20px; }}
+    .btn {{ display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 12px 32px; border-radius: 10px; font-size: 15px; font-weight: 600;
+            border: none; cursor: pointer; transition: all 0.2s ease;
+            background: #22c55e; color: white; }}
+    .btn:hover {{ background: #16a34a; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(34,197,94,0.3); }}
+    .btn-success {{ background: #15803d; }}
+    .steps {{ text-align: left; background: #f8f9fa; border-radius: 10px; padding: 16px;
+              margin-bottom: 20px; border: 1px solid #e9ecef; }}
+    .steps ol {{ margin: 8px 0 0; padding-left: 20px; }}
+    .steps li {{ color: #555; font-size: 13px; line-height: 1.8; }}
+    .state-info {{ font-size: 11px; color: #999; margin-top: 16px; padding-top: 16px;
+                   border-top: 1px solid #eee; }}
+  </style>
+  <script>
+    function copyCode() {{
+      const code = document.getElementById('auth-code');
+      const text = code.textContent;
+      navigator.clipboard.writeText(text).then(() => {{
+        const btn = document.getElementById('copy-btn');
+        code.classList.add('copied');
+        btn.textContent = '✓ Copied!';
+        btn.classList.add('btn-success');
+        setTimeout(() => {{ btn.textContent = 'Copy Code'; btn.classList.remove('btn-success'); code.classList.remove('copied'); }}, 3000);
+      }}).catch(() => {{
+        // Fallback: select the text
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+      }});
+    }}
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✅</div>
+    <h1>Authorization Successful</h1>
+    <p>Your MCP connection has been authorized. Complete the setup by copying the code below into your client.</p>
+
+    <div class="steps">
+      <strong style="font-size:13px;color:#333;">How to complete the connection:</strong>
+      <ol>
+        <li>Click the code below to copy it</li>
+        <li>Return to your MCP client (Perplexity, Claude.ai, etc.)</li>
+        <li>Paste the code where prompted</li>
+      </ol>
+    </div>
+
+    <div class="code-box" id="auth-code" onclick="copyCode()">{code}</div>
+    <button class="btn" id="copy-btn" onclick="copyCode()">Copy Code</button>
+    <p class="hint">This code expires in 5 minutes. You can also paste it into the authorization field in your MCP client.</p>
+    <div class="state-info">Client ID: {client_id}</div>
+  </div>
+</body>
+</html>"""
 
 
 # ── MCP Auth Middleware (raw ASGI — compatible with SSE) ─────────────
