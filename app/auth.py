@@ -152,13 +152,13 @@ async def oauth_authorize(
     # Validate required params
     if response_type != "code":
         return HTMLResponse("<h1>Invalid response_type</h1>", status_code=400)
-    if client_id != CLIENT_ID:
-        return HTMLResponse(
-            f"<h1>Unknown client</h1><p>Client ID '{client_id}' not recognised.</p>",
-            status_code=400,
-        )
     if not redirect_uri:
         return HTMLResponse("<h1>Missing redirect_uri</h1>", status_code=400)
+
+    # Accept any client_id — Claude.ai's web connector generates its own.
+    # Log unknown ones so we can track them, but don't reject.
+    if client_id and client_id != CLIENT_ID:
+        logger.info("OAuth authorize with unrecognised client_id=%r — accepting anyway", client_id)
 
     # Render consent page with both flows
     base = _get_base_url(request)
