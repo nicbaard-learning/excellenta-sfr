@@ -57,7 +57,14 @@ def import_assessment_objectives(session, wb) -> int:
 
 
 def _map_columns(df: pd.DataFrame) -> dict[str, str]:
-    """Map column headers to standardized keys."""
+    """Map column headers to standardized keys.
+
+    The Assessment Objectives 2026.1 sheet has these relevant columns:
+        'SCF #'                                      -> control_ref
+        'SCF AO #'                                   -> code
+        'SCF Assessment Objective (AO)\n...'          -> text  (the real objective)
+        'SCF Assessment Objective (AO) Origin(s)'    -> SKIP  (metadata, not actual text)
+    """
     col_map: dict[str, str] = {}
     for col in df.columns:
         if col is None or pd.isna(col):
@@ -65,10 +72,13 @@ def _map_columns(df: pd.DataFrame) -> dict[str, str]:
         s = str(col).strip().lower()
         if any(x in s for x in ("control #", "scf #", "control ref", "scf number", "scf_id")):
             col_map["control_ref"] = col
-        elif any(x in s for x in ("objective #", "objective code", "obj #", "obj code", "reference")):
+        elif any(x in s for x in ("objective #", "objective code", "obj #", "obj code",
+                                   "reference", "ao #", "ao number")):
             col_map["code"] = col
         elif any(x in s for x in ("objective", "assessment objective", "objective text", "description")):
-            col_map["text"] = col
+            # Skip columns that contain 'origin' – they're metadata, not the actual text
+            if "origin" not in s:
+                col_map["text"] = col
     return col_map
 
 

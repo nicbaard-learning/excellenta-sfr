@@ -223,12 +223,26 @@ async def framework_detail(
 @router.get("/controls/{control_id}")
 async def control_detail(
     request: Request,
-    control_id: int,
+    control_id: str,
     session: Session = Depends(get_session),
 ):
-    """Show full control detail with mappings, objectives, evidence, compensating."""
+    """Show full control detail with mappings, objectives, evidence, compensating.
+
+    Accepts both numeric control IDs (e.g. /controls/42) and SCF # strings
+    (e.g. /controls/AAT-01) for flexible linking from translate results.
+    """
     ctrl_svc = ControlService(session)
-    ctrl = ctrl_svc.get_control(control_id)
+
+    # Try lookup by integer ID first, then by SCF # string
+    ctrl = None
+    try:
+        ctrl = ctrl_svc.get_control(int(control_id))
+    except ValueError:
+        pass
+
+    if ctrl is None:
+        ctrl = ctrl_svc.get_control_by_scf_id(control_id)
+
     if not ctrl:
         return templates.TemplateResponse(
             "control_detail.html",
@@ -239,11 +253,12 @@ async def control_detail(
             status_code=404,
         )
 
-    mappings = ctrl_svc.get_mappings(control_id)
-    objectives = ctrl_svc.get_assessment_objectives(control_id)
-    evidence = ctrl_svc.get_evidence_artifacts(control_id)
-    compensating = ctrl_svc.get_compensating_controls(control_id)
-    auth_sources = ctrl_svc.get_authoritative_sources(control_id)
+    ctrl_id = ctrl.id
+    mappings = ctrl_svc.get_mappings(ctrl_id)
+    objectives = ctrl_svc.get_assessment_objectives(ctrl_id)
+    evidence = ctrl_svc.get_evidence_artifacts(ctrl_id)
+    compensating = ctrl_svc.get_compensating_controls(ctrl_id)
+    auth_sources = ctrl_svc.get_authoritative_sources(ctrl_id)
 
     control_data = {
         "id": ctrl.id,
