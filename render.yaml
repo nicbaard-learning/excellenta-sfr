@@ -10,6 +10,8 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false  # Set manually in Render dashboard
+      - key: ADMIN_API_KEY
+        sync: false  # Generate a secure random key and paste it in the dashboard
       - key: APP_TITLE
         value: "SFR – Shared Framework Repository"
       - key: APP_VERSION

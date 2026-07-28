@@ -23,6 +23,7 @@ try:
 
     # ── Register API routers ──────────────────────────────────────────────
     from app.api import frameworks, controls, compare, recommend, reference, system, evidence, translation, maturity, roadmap, risk_intelligence  # noqa: E402
+    from app.api import oscal  # noqa: E402
     from app.ui import router as ui_router  # noqa: E402
     from app.auth import router as oauth_router  # noqa: E402
     from dotenv import load_dotenv
@@ -128,6 +129,7 @@ try:
     app.include_router(maturity.router)
     app.include_router(roadmap.router)
     app.include_router(risk_intelligence.router)
+    app.include_router(oscal.router)
 
     # ── OAuth 2.0 ────────────────────────────────────────────────────────
     # Endpoints for Claude.ai connector authentication.

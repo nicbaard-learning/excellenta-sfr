@@ -8,8 +8,7 @@
 {% else %}
 
 <div class="page-header">
-  <a href="/frameworks" style="font-size:13px;">← Back to Frameworks</a>
-  <div class="fw-header" style="margin-top:12px;">
+  <a href="/frameworks" style="font-size:13px;">← Back to Frameworks</a>    <div class="fw-header" style="margin-top:12px;">
     <div class="fw-info">
       <h1>{{ fw.name }}</h1>
       <p style="color:var(--text-muted);">
@@ -21,6 +20,11 @@
     <div class="fw-meta">
       {% if fw.publisher %}<div>{{ fw.publisher }}</div>{% endif %}
       {% if fw.source_url %}<div><a href="{{ fw.source_url }}" target="_blank">Source ↗</a></div>{% endif %}
+      <div style="margin-top:8px;">
+        <a href="/api/oscal/profile/{{ fw.id }}" class="btn btn-sm" target="_blank" style="text-decoration:none;">
+          ⬇ Export as OSCAL
+        </a>
+      </div>
     </div>
   </div>
 </div>

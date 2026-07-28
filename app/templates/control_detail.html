@@ -50,9 +50,9 @@
 
 <!-- Mappings -->
 <div class="card">
-  <div class="card-header">
-    <span>Framework Mappings</span>
+  <div class="card-header">      <span>Framework Mappings</span>
     <span class="badge primary">{{ mappings|length }}</span>
+    <a href="/api/oscal/catalog?domain={{ c.domain_code }}" target="_blank" class="badge" style="text-decoration:none;margin-left:auto;font-size:11px;">OSCAL ↗</a>
   </div>
   <div class="card-body table-wrap">
     {% if mappings %}

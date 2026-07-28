@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     default_workbook: str = "secure-controls-framework-scf-2026-1.xlsx"
     import_batch_size: int = 500
 
+    # ── Admin ──────────────────────────────────────────────────────────
+    admin_api_key: str = ""
+
     # ── MCP ────────────────────────────────────────────────────────────
     mcp_api_key: str = ""
 

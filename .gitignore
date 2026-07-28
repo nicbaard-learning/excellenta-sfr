@@ -19,6 +19,6 @@ venv/
 Thumbs.db
 
 # Project specific
-*.xlsx
+# *.xlsx  # Uncomment to ignore spreadsheets. The SCF workbook must be tracked for reimport.
 *.log
 nul
