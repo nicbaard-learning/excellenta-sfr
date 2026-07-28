@@ -100,7 +100,33 @@ class RoadmapService:
                 "error": "No controls found for this framework",
             }
 
-        # Score and rank each control by priority
+        # ── Batch load objectives & evidence (avoid N+1 queries) ──
+        ctrl_ids = [c.id for c in controls]
+
+        objectives_map: dict[int, list[dict]] = {cid: [] for cid in ctrl_ids}
+        for obj in (
+            self.session.query(AssessmentObjective)
+            .filter(AssessmentObjective.control_id.in_(ctrl_ids))
+            .all()
+        ):
+            objectives_map.setdefault(obj.control_id, []).append({
+                "objective_code": obj.objective_code,
+                "objective_text": obj.objective_text,
+            })
+
+        evidence_map: dict[int, list[dict]] = {cid: [] for cid in ctrl_ids}
+        for ev in (
+            self.session.query(EvidenceArtifact)
+            .filter(EvidenceArtifact.control_id.in_(ctrl_ids))
+            .all()
+        ):
+            evidence_map.setdefault(ev.control_id, []).append({
+                "erl_number": ev.erl_number,
+                "evidence_title": ev.evidence_title,
+                "evidence_type": ev.evidence_type,
+            })
+
+        # ── Score and rank each control by priority ──
         size_column = {
             "micro": "solutions_micro_small",
             "small": "solutions_small",
@@ -118,37 +144,41 @@ class RoadmapService:
             # Priority = weight × maturity_gap
             priority = weight * maturity_gap
 
-            # Get firm-size guidance
+            # Get firm-size guidance (full, no truncation)
             guidance = getattr(ctrl, size_column, None)
             if not guidance:
                 guidance = None
 
-            # Get evidence for this control
-            evidence_count = (
-                self.session.query(EvidenceArtifact)
-                .filter(EvidenceArtifact.control_id == ctrl.id)
-                .count()
-            )
-
-            # Get objectives
-            objectives = self.session.query(AssessmentObjective).filter(
-                AssessmentObjective.control_id == ctrl.id
-            ).all()
+            # Resolve pre-loaded data
+            ctrl_objectives = objectives_map.get(ctrl.id, [])
+            ctrl_evidence = evidence_map.get(ctrl.id, [])
 
             scored_items.append({
                 "scf_id": ctrl.scf_id,
                 "title": ctrl.title,
                 "domain_code": ctrl.domain.code if ctrl.domain else None,
                 "domain_name": ctrl.domain.name if ctrl.domain else None,
-                "description": ctrl.description[:200] if ctrl.description else None,
+                "description": ctrl.description if ctrl.description else None,
+                "control_question": ctrl.control_question,
                 "relative_weighting": weight,
                 "current_maturity": current_level,
                 "maturity_gap": maturity_gap,
                 "priority_score": round(priority, 2),
-                "implementation_guidance": guidance[:500] if guidance else None,
+                "implementation_guidance": guidance if guidance else None,
                 "conformity_cadence": ctrl.conformity_cadence,
-                "evidence_count": evidence_count,
-                "assessment_objectives_count": len(objectives),
+                # Full SCR-CMM level descriptions for MCP/API richness
+                "cmm_level_0": ctrl.cmm_level_0,
+                "cmm_level_1": ctrl.cmm_level_1,
+                "cmm_level_2": ctrl.cmm_level_2,
+                "cmm_level_3": ctrl.cmm_level_3,
+                "cmm_level_4": ctrl.cmm_level_4,
+                "cmm_level_5": ctrl.cmm_level_5,
+                # Evidence
+                "evidence_count": len(ctrl_evidence),
+                "evidence_artifacts": ctrl_evidence,
+                # Assessment objectives
+                "assessment_objectives_count": len(ctrl_objectives),
+                "assessment_objectives": ctrl_objectives,
             })
 
         # Sort by priority (highest first)

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ data.roadprint or 'Compliance Roadmap' }}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.5;
+      color: #1a1a2e;
+      padding: 0.75in 0.5in;
+    }
+
+    .cover {
+      text-align: center;
+      padding: 60px 0 40px;
+      border-bottom: 3px solid #2563eb;
+      margin-bottom: 30px;
+    }
+    .cover h1 { font-size: 26pt; color: #1e3a8a; margin-bottom: 8px; }
+    .cover .subtitle { font-size: 14pt; color: #64748b; }
+    .cover .meta { margin-top: 16px; font-size: 10pt; color: #94a3b8; }
+    .cover .meta span { display: inline-block; margin: 0 12px; }
+
+    .summary {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      margin-bottom: 30px;
+      font-size: 10pt;
+    }
+    .summary-item { text-align: center; }
+    .summary-value { font-size: 18pt; font-weight: 700; color: #2563eb; }
+    .summary-label { color: #64748b; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .domains { margin-bottom: 30px; page-break-inside: avoid; }
+    .domains h2 { font-size: 14pt; color: #1e3a8a; margin-bottom: 8px; }
+    .domain-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .domain-tag {
+      display: inline-block; padding: 4px 10px; border-radius: 4px;
+      font-size: 9pt; font-weight: 600; color: white;
+    }
+    .domain-tag.tier-1 { background: #dc2626; }
+    .domain-tag.tier-2 { background: #ea580c; }
+    .domain-tag.tier-3 { background: #2563eb; }
+    .domain-tag.tier-4 { background: #64748b; }
+
+    .phase { margin-bottom: 24px; page-break-inside: avoid; }
+    .phase-header {
+      border-bottom: 2px solid; padding-bottom: 6px; margin-bottom: 12px;
+      display: flex; justify-content: space-between; align-items: baseline;
+    }
+    .phase-header h2 { font-size: 14pt; margin: 0; }
+    .phase-header .count { font-size: 10pt; color: #64748b; }
+    .phase-header-30_day { border-color: #16a34a; } .phase-header-30_day h2 { color: #15803d; }
+    .phase-header-90_day { border-color: #2563eb; } .phase-header-90_day h2 { color: #1e40af; }
+    .phase-header-180_day { border-color: #64748b; } .phase-header-180_day h2 { color: #475569; }
+
+    table {
+      width: 100%; border-collapse: collapse; font-size: 9.5pt;
+      margin-bottom: 12px; page-break-inside: auto;
+    }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
+    th {
+      background: #f1f5f9; padding: 6px 8px; text-align: left; font-weight: 600;
+      font-size: 8pt; text-transform: uppercase; letter-spacing: 0.3px;
+      color: #475569; border-bottom: 2px solid #e2e8f0;
+    }
+    td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+    .scf-id { font-family: 'SF Mono', 'Consolas', 'Courier New', monospace; font-weight: 600; color: #2563eb; }
+    .weight-cell, .gap-cell { text-align: center; }
+    .gap-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 8pt; font-weight: 600;
+    }
+    .gap-low { background: #dcfce7; color: #15803d; }
+    .gap-med { background: #fef3c7; color: #92400e; }
+    .gap-high { background: #fee2e2; color: #991b1b; }
+
+    .guidance-row { background: #f8fafc; }
+    .guidance-row td {
+      padding: 8px 8px 12px 24px; font-size: 9pt; color: #334155;
+      line-height: 1.6; border-bottom: 1px solid #e2e8f0;
+    }
+    .guidance-label {
+      font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #94a3b8; margin-bottom: 3px;
+    }
+
+    .footer {
+      margin-top: 30px; padding-top: 12px; border-top: 1px solid #e2e8f0;
+      font-size: 8pt; color: #94a3b8; text-align: center;
+    }
+
+    @media print {
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+
+{% set phases = data["roadmap"]["phases"] if data and data["roadmap"] and data["roadmap"]["phases"] else {} %}
+{% set context = data.context or {} %}
+{% set domains = data.domain_priorities or [] %}
+{% set phase_names = {
+  '30_day': 'Next 30 Days — Quick Wins',
+  '90_day': '30–90 Days — Build Foundation',
+  '180_day': '90–180 Days — Mature & Optimize',
+} %}
+{% set phase_order = ['30_day', '90_day', '180_day'] %}
+
+<!-- ═══ Cover ═══ -->
+<div class="cover">
+  <h1>Compliance Roadmap</h1>
+  <div class="subtitle">{{ data.framework.name }}</div>
+  <div class="meta">
+    <span>🏢 {{ context.firm_size | capitalize }} Organization</span>
+    <span>📋 {{ context.total_controls }} Controls</span>
+    {% if context.maturity_summary.overall_avg_maturity is defined %}
+    <span>📊 Avg Maturity: {{ context.maturity_summary.overall_avg_maturity }}/5</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ═══ Summary ═══ -->
+<div class="summary">
+  <div class="summary-item">
+    <div class="summary-value">{{ context.total_controls }}</div>
+    <div class="summary-label">Total Controls</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value">{{ context.maturity_summary.overall_avg_maturity | default('—') }}/5</div>
+    <div class="summary-label">Avg Maturity</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value">{{ domains | length }}</div>
+    <div class="summary-label">Domains</div>
+  </div>
+  {% if context.maturity_summary.controls_at_level_0 is defined %}
+  <div class="summary-item">
+    <div class="summary-value">{{ context.maturity_summary.controls_at_level_0 }}</div>
+    <div class="summary-label">At Level 0</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value">{{ context.maturity_summary.controls_at_level_3_plus }}</div>
+    <div class="summary-label">Level 3+</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ═══ Domain Priorities ═══ -->
+{% if domains %}
+<div class="domains">
+  <h2>Domain Priorities</h2>
+  <div class="domain-bar">
+    {% for d in domains %}
+    {% set tier_class = 'tier-1' if loop.index <= 2 else 'tier-2' if loop.index <= 4 else 'tier-3' if loop.index <= 7 else 'tier-4' %}
+    <span class="domain-tag {{ tier_class }}">{{ d.domain_code }} ({{ d.total_controls }})</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ═══ Phases ═══ -->
+{% for key in phase_order %}
+{% set phase = phases.get(key) %}
+{% if phase and phase["items"] %}
+
+<div class="phase">
+  <div class="phase-header phase-header-{{ key }}">
+    <h2>{{ phase_names[key] }}</h2>
+    <span class="count">{{ phase["control_count"] }} controls · Target {{ phase["timeline"]["target"] }}</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px;">#</th>
+        <th style="width:80px;">SCF #</th>
+        <th>Control Title</th>
+        <th style="width:50px;">Domain</th>
+        <th style="width:50px;">Weight</th>
+        <th style="width:60px;">Gap</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in phase["items"] %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td class="scf-id">{{ item.scf_id }}</td>
+        <td>{{ item.title }}</td>
+        <td>{{ item.domain_code or '—' }}</td>
+        <td class="weight-cell">{{ item.relative_weighting or '1.0' }}</td>
+        <td class="gap-cell">
+          {% set gap = item.current_maturity | default(0) %}
+          <span class="gap-badge {% if gap >= 3 %}gap-low{% elif gap >= 1 %}gap-med{% else %}gap-high{% endif %}">
+            {{ gap }}→5
+          </span>
+        </td>
+      </tr>
+      {% if item.implementation_guidance or item.assessment_objectives %}
+      <tr class="guidance-row">
+        <td colspan="6" style="padding-bottom:4px;">
+          {% if item.implementation_guidance %}
+          <div class="guidance-label" style="margin-top:0;">📖 Implementation Guidance</div>
+          <div style="margin-bottom:8px;">{{ item.implementation_guidance }}</div>
+          {% endif %}
+          {% if item.assessment_objectives %}
+          <div class="guidance-label">🎯 Assessment Objectives ({{ item.assessment_objectives | length }})</div>
+          <ul style="margin:0 0 0 16px;padding:0;list-style:none;">
+            {% for ao in item.assessment_objectives %}
+            <li style="font-size:8.5pt;line-height:1.5;margin-bottom:2px;">
+              {% if ao.objective_code %}<strong>{{ ao.objective_code }}:</strong> {% endif %}{{ ao.objective_text }}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+{% endfor %}
+
+<!-- ═══ Footer ═══ -->
+<div class="footer">
+  Generated on <span id="print-date"></span> ·
+  {{ (context.firm_size or 'small') | capitalize }} Organization ·
+  SFR – Shared Framework Repository
+</div>
+
+<script>
+document.getElementById('print-date').textContent = new Date().toLocaleDateString('en-US', {
+  year: 'numeric', month: 'long', day: 'numeric'
+});
+// Auto-trigger print dialog after rendering
+window.onload = function() { setTimeout(function() { window.print(); }, 500); };
+</script>
+
+</body>
+</html>

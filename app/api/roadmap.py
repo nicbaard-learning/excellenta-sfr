@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,33 @@ class RoadmapRequest(BaseModel):
 
 
 router = APIRouter(prefix="/api/roadmap", tags=["Compliance Roadmap"])
+
+templates = Jinja2Templates(directory="app/templates")
+
+
+@router.get("/print")
+async def print_roadmap(
+    request: Request,
+    framework_name: str = Query(...),
+    firm_size: str = Query("small"),
+    focus_domain: str | None = Query(None),
+    session: Session = Depends(get_session),
+):
+    """Render a print-optimized HTML page of the full roadmap.
+
+    Open this in your browser and use Ctrl+P / Cmd+P → Save as PDF
+    to export the complete roadmap with all implementation guidance.
+    """
+    svc = RoadmapService(session)
+    data = svc.generate_roadmap(
+        framework_name=framework_name,
+        firm_size=firm_size,
+        focus_domain=focus_domain,
+    )
+    return templates.TemplateResponse(
+        "roadmap_print.html",
+        {"request": request, "data": data},
+    )
 
 
 @router.get("/generate")

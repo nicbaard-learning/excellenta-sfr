@@ -124,10 +124,11 @@ function renderRoadmap(data, container) {
         <div class="card-header" style="border-left:4px solid ${key === '30_day' ? 'var(--accent)' : key === '90_day' ? 'var(--primary)' : 'var(--border)'};">
           <span>${phaseNames[key]}</span>
           <span class="badge ${phaseColors[key]}">${phase.control_count} controls</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Target: ${phase.timeline?.target || ''}</span>
         </div>
         <div class="card-body table-wrap">
           <table>
-            <thead><tr><th>Priority</th><th>SCF #</th><th>Title</th><th>Domain</th><th>Weight</th><th>Gap</th></tr></thead>
+            <thead><tr><th>Priority</th><th>SCF #</th><th>Title</th><th>Domain</th><th>Weight</th><th>Gap</th><th style="width:30px;"></th></tr></thead>
             <tbody>
               ${phase.items.map((item, i) => `
                 <tr>
@@ -137,22 +138,45 @@ function renderRoadmap(data, container) {
                   <td>${item.domain_code || '—'}</td>
                   <td>${item.relative_weighting || '1.0'}</td>
                   <td><span class="badge ${item.current_maturity < 2 ? 'warn' : 'success'}">${item.current_maturity || 0}→5</span></td>
+                  <td style="text-align:center;">
+                    ${item.implementation_guidance ? `<button class="btn-sm btn-ghost" onclick="toggleGuidance(this, '${key}', ${i})" title="Toggle implementation guidance">📋</button>` : ''}
+                  </td>
                 </tr>
+                ${item.implementation_guidance ? `
+                <tr id="guidance-${key}-${i}" class="guidance-row" style="display:none;">
+                  <td colspan="7" style="padding:10px 16px 14px 24px;font-size:13px;line-height:1.7;color:var(--text);background:#f8fafc;">
+                    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:4px;">📖 Implementation Guidance</div>
+                    ${item.implementation_guidance}
+                  </td>
+                </tr>
+                ` : ''}
               `).join('')}
             </tbody>
           </table>
-          ${phase.items[0]?.implementation_guidance ? `
-            <details style="margin-top:8px;">
-              <summary style="cursor:pointer;font-size:13px;color:var(--text-muted);">View implementation guidance</summary>
-              <div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--text);">
-                ${phase.items[0].implementation_guidance}
-              </div>
-            </details>` : ''}
         </div>
       </div>`;
   }
 
-  container.innerHTML = html;
+  // Add export button after the context card
+  const exportBtn = data.roadprint ? `
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <a href="/api/roadmap/print?framework_name=${encodeURIComponent(data.framework?.name || '')}&firm_size=${encodeURIComponent(data.context?.firm_size || 'small')}" target="_blank" class="btn" style="text-decoration:none;">
+        📄 Download Full PDF
+      </a>
+      <span style="font-size:12px;color:var(--text-muted);align-self:center;">
+        Opens a print-friendly page &mdash; use Ctrl+P / Cmd+P &rarr; Save as PDF
+      </span>
+    </div>` : '';
+
+  container.innerHTML = exportBtn + html;
+}
+
+function toggleGuidance(btn, phaseKey, idx) {
+  const row = document.getElementById('guidance-' + phaseKey + '-' + idx);
+  if (!row) return;
+  const isHidden = row.style.display === 'none';
+  row.style.display = isHidden ? 'table-row' : 'none';
+  btn.style.opacity = isHidden ? '1' : '0.5';
 }
 </script>
 
