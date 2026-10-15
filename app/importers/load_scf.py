@@ -20,9 +20,8 @@ from app.importers.compensating import import_compensating_controls
 from app.importers.controls import import_controls, import_domains, import_principles
 from app.importers.domains import import_domains_and_principles
 from app.importers.evidence import import_evidence
-from app.importers.backfill_jurisdictions import backfill_framework_jurisdictions
 from app.importers.backfill_applicability import backfill_applicability_rules
-from app.seed.jurisdictions import seed_jurisdictions
+from app.importers.catalogue import load_catalogue, prune_stale_mappings
 from app.importers.frameworks import import_frameworks
 from app.importers.mappings import import_mappings
 from app.importers.objectives import import_assessment_objectives
@@ -104,7 +103,9 @@ def load_workbook(filepath: str) -> None:
         # ---- Phase 4: Control Mappings ----
         logger.info("─" * 50)
         logger.info("Phase 4: Importing control mappings...")
-        mapping_count = import_mappings(session, wb, framework_ids)
+        entries = load_catalogue(wb)
+        prune_stale_mappings(session, entries, framework_ids)
+        mapping_count = import_mappings(session, wb, framework_ids, entries)
         sheets_processed.append("SCF 2026.1 (mappings)")
         total_loaded += mapping_count
         logger.info("  → %d mappings", mapping_count)
@@ -142,14 +143,7 @@ def load_workbook(filepath: str) -> None:
         logger.info("  → %d authoritative sources", src_count)
 
         # ---- Phase 9: Framework–Jurisdiction Links ----
-        logger.info("─" * 50)
-        logger.info("Phase 9a: Seeding jurisdictions...")
-        seed_count = seed_jurisdictions(session)
-        logger.info("  → %d jurisdictions seeded", seed_count)
-        logger.info("Phase 9b: Backfilling framework–jurisdiction links...")
-        link_count = backfill_framework_jurisdictions(session)
-        total_loaded += link_count
-        logger.info("  → %d framework–jurisdiction links created", link_count)
+        # Set in Phase 1 from the Authoritative Sources geography column.
 
         # ---- Phase 10: Applicability Rules ----
         logger.info("─" * 50)

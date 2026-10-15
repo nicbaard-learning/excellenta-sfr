@@ -24,7 +24,7 @@ from app.mcp.resolver import resolve_framework_id, resolve_frameworks
 from app.services.comparison_service import ComparisonService
 from app.services.control_service import ControlService
 from app.services.framework_service import FrameworkService
-from app.services.recommendation_service import RecommendationService
+from app.services.recommendation_service import RecommendationInputError, RecommendationService
 from app.services.evidence_service import EvidenceIntelligenceService
 from app.services.translation_service import TranslationService
 from app.services.maturity_service import MaturityService
@@ -67,15 +67,23 @@ def _get_session():
         "'What frameworks apply to a South African SaaS company?' or "
         "'What privacy frameworks apply in the US?'"
         "\n\n"
+        "HOW RESULTS ARE SCOPED:\n"
+        "- `jurisdiction` is a hard filter. Results are frameworks specific to that\n"
+        "  jurisdiction (scope=\"jurisdiction\") plus global frameworks (scope=\"global\");\n"
+        "  frameworks for other countries are never returned. EU member states also get\n"
+        "  EU-wide frameworks (GDPR, NIS2, DORA).\n"
+        "- Other filters narrow the results and are relaxed (listed in\n"
+        "  `relaxed_filters`) when their combination matches nothing.\n"
+        "\n"
         "STRATEGY FOR USING THIS TOOL:\n"
-        "1. Start with just `business_model` — that's the most reliable filter.\n"
-        "2. If the results are too broad, call again with additional filters like\n"
-        "   `firm_size`, `jurisdiction`, or `privacy_context`.\n"
+        "1. Pass `jurisdiction` whenever the country is known, plus `business_model`.\n"
+        "2. Add `firm_size`, `privacy_context` or `domain` to narrow further.\n"
         "3. If you can't cleanly map a natural-language description to one of the\n"
         "   structured parameters, use the `search` parameter for free-text matching\n"
-        "   against framework names, descriptions, and publishers.\n"
-        "4. Jurisdiction accepts ISO codes (\"US\", \"ZA\"), country names \n"
-        "   (\"United States\"), or region names (\"NA\", \"North America\")."
+        "   against framework names, titles, and publishers.\n"
+        "4. Jurisdiction accepts ISO codes (\"US\", \"ZA\", \"GB\"), country names\n"
+        "   (\"South Africa\"), or region codes (\"APAC\"). Unknown values return an error.\n"
+        "5. `max_controls` (default 5) sets how many sample controls come back per framework."
     ),
 )
 def get_applicable_frameworks(
@@ -88,6 +96,7 @@ def get_applicable_frameworks(
     firm_size: str | None = None,
     threat_profile: str | None = None,
     search: str | None = None,
+    max_controls: int = 5,
 ) -> dict:
     """Recommend frameworks matching the provided context.
 
@@ -109,12 +118,12 @@ def get_applicable_frameworks(
         search: Free-text search against framework names, descriptions,
             codes, and publishers. Use this when you can't cleanly map
             a natural-language question to structured params.
+        max_controls: Sample controls returned per framework (0-100, default 5).
 
     Returns:
         A dict with "recommendations" (list of framework blueprints),
         "total" count, "applied_filters" summary, and context metadata.
-        If zero results are returned, try calling with fewer filters
-        (e.g. just business_model) for broader results.
+        Each recommendation has a "scope" of "jurisdiction" or "global".
     """
     session = _get_session()
     try:
@@ -129,8 +138,11 @@ def get_applicable_frameworks(
             firm_size=firm_size,
             threat_profile=threat_profile,
             search=search,
+            max_controls=max_controls,
         )
         return result
+    except RecommendationInputError as exc:
+        return {"error": str(exc), **exc.extra, "recommendations": [], "total": 0, "applied_filters": []}
     except Exception as exc:
         logger.exception("get_applicable_frameworks failed")
         return {"error": str(exc), "recommendations": [], "total": 0, "applied_filters": []}
@@ -183,7 +195,7 @@ def get_framework_details(
 
         versions = fw_svc.get_versions(resolved_id)
         jurisdictions = fw_svc.get_framework_jurisdictions(resolved_id)
-        related = fw_svc.get_related_frameworks(resolved_id)
+        related = fw_svc.get_related_with_overlap(resolved_id, limit=10)
 
         return {
             "id": fw.id,
@@ -206,7 +218,15 @@ def get_framework_details(
             "jurisdictions": [
                 {"code": j.code, "name": j.name, "region": j.region} for j in jurisdictions
             ],
-            "related_frameworks": [{"code": r.code, "name": r.name} for r in related],
+            "related_frameworks": [
+                {
+                    "code": r["framework"].code,
+                    "name": r["framework"].name,
+                    "shared_controls": r["shared_controls"],
+                    "overlap_percent": r["overlap_percent"],
+                }
+                for r in related
+            ],
         }
     except Exception as exc:
         logger.exception("get_framework_details failed")

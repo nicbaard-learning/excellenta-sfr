@@ -48,20 +48,15 @@ EXPLICIT_BM_RULES: list[tuple[str, str, str]] = [
     ("US-NY-DFS",     "FINTECH",      "NY DFS cybersecurity regulation covers financial services"),
     ("US-NY-DFS",     "INSURANCE",    "NY DFS also regulates insurance companies"),
     ("US-SOX",        "SAAS",         "SOX ITGC applies to any public company's SaaS platforms"),
-    ("SOX",           "SAAS",         "SOX ITGC applies to any public company's SaaS platforms"),
     ("US-FINRA",      "FINTECH",      "FINRA rules govern securities brokers and fintech platforms"),
 
     # Healthcare
-    ("HIPAA",         "HEALTHTECH",   "HIPAA Privacy & Security Rules govern healthcare providers and tech"),
     ("US-HIPAA",      "HEALTHTECH",   "US HIPAA replication in the SCF mapping"),
     ("US-HHS-45CFR",  "HEALTHTECH",   "HHS 45 CFR (HIPAA administrative simplification)"),
     ("US-FDA-21CFR",  "HEALTHTECH",   "FDA 21 CFR Part 11 — electronic records for medical devices"),
     ("IEC-60601",     "HEALTHTECH",   "IEC 60601 — medical electrical equipment security"),
 
     # Cloud / SaaS
-    ("FedRAMP",       "IAAS",         "FedRAMP authorisation required for IaaS federal cloud services"),
-    ("FedRAMP",       "PAAS",         "FedRAMP authorisation required for PaaS federal cloud services"),
-    ("FedRAMP",       "SAAS",         "FedRAMP authorisation required for SaaS federal cloud services"),
     ("US-FedRAMP",    "IAAS",         "US FedRAMP SCF mapping — IaaS"),
     ("US-FedRAMP",    "PAAS",         "US FedRAMP SCF mapping — PaaS"),
     ("US-FedRAMP",    "SAAS",         "US FedRAMP SCF mapping — SaaS"),
@@ -115,13 +110,9 @@ EXPLICIT_BM_RULES: list[tuple[str, str, str]] = [
     ("US-FERPA",      "EDTECH",       "FERPA — student privacy for edtech and HR systems"),
 
     # Data / Analytics
-    ("CCPA",          "DATABROKER",   "CCPA explicitly targets data brokers in California"),
-    ("CCPA",          "MARKETING",    "CCPA applies to marketing tech collecting CA consumer data"),
     ("US-CA-CCPA",    "DATABROKER",   "California Consumer Privacy Act — data broker regulation"),
     ("US-CA-CCPA",    "MARKETING",    "CCPA compliance for ad tech and marketing platforms"),
-    ("GDPR",          "DATABROKER",   "GDPR — data broker obligations under Art 22"),
-    ("GDPR",          "MARKETING",    "GDPR consent rules govern marketing automation"),
-    ("GDPR",          "SAAS",         "GDPR applies to any SaaS processing EU personal data"),
+    ("EU-GDPR",       "DATABROKER",   "GDPR — data broker obligations under Art 22"),
     ("EU-GDPR",       "SAAS",         "EU GDPR SCF mapping — SaaS providers"),
     ("EU-GDPR",       "MARKETING",    "EU GDPR marketing consent requirements"),
 
@@ -149,7 +140,6 @@ EXPLICIT_BM_RULES: list[tuple[str, str, str]] = [
     ("IMO-Maritime",  "SUPPLYCHAIN",  "IMO maritime cybersecurity — shipping and logistics"),
 
     # Government / Defense
-    ("CMMC",          "HARDWARE",     "CMMC — defense contractor hardware security"),
     ("US-CMMC",       "HARDWARE",     "CMMC (US replication) — defense contractor"),
     ("NIST-800-171",  "IAAS",         "NIST 800-171 — CUI protection for cloud services"),
     ("NIST-800-171",  "SAAS",         "NIST 800-171 — CUI protection for SaaS"),
@@ -184,12 +174,6 @@ EXPLICIT_BM_RULES: list[tuple[str, str, str]] = [
 PRIVACY_FRAMEWORK_PREFIXES: list[tuple[str, str]] = [
     # Code prefix → rationale
     # Exact codes
-    ("GDPR",        "General Data Protection Regulation (EU)"),
-    ("CCPA",        "California Consumer Privacy Act"),
-    ("PIPEDA",      "Personal Information Protection and Electronic Documents Act (CA)"),
-    ("LGPA",        "Lei Geral de Proteção de Dados (BR)"),
-    ("HIPAA",       "Health Insurance Portability and Accountability Act (US)"),
-    ("SOX",         "Sarbanes-Oxley Act — financial privacy / record retention"),
     ("COPPA",       "Children's Online Privacy Protection Act (US)"),
     ("FERPA",       "Family Educational Rights and Privacy Act (US)"),
     ("GLBA",        "Gramm-Leach-Bliley Act — financial privacy (US)"),
@@ -249,9 +233,8 @@ PRIVACY_FRAMEWORK_PREFIXES: list[tuple[str, str]] = [
 SIZE_RULES: list[tuple[str, str, str]] = [
     ("NIST-800-171",  "small",  "NIST 800-171 is the standard for small/medium defense contractors (DFARS)"),
     ("NIST-800-171",  "medium", "NIST 800-171 applies to medium-sized defense contractors"),
-    ("CMMC",          "small",  "CMMC Level 1 is designed for small contractors (self-assessment)"),
-    ("CMMC",          "medium", "CMMC Level 2-3 targets medium defense contractors"),
-    ("FedRAMP",       "large",  "FedRAMP JAB authorisation is typically pursued by large cloud providers"),
+    ("US-CMMC",       "small",  "CMMC Level 1 is designed for small contractors (self-assessment)"),
+    ("US-CMMC",       "medium", "CMMC Level 2-3 targets medium defense contractors"),
     ("US-FedRAMP",    "large",  "FedRAMP (mapped) — large enterprise cloud"),
     ("PCI-DSS",       "medium", "PCI DSS SAQ available for small/medium payment processors"),
     ("PCI-DSS",       "large",  "PCI DSS full assessment for large enterprises (Level 1)"),

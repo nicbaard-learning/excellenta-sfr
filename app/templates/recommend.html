@@ -90,6 +90,9 @@
   {% if error %}
   <div class="error">{{ error }}</div>
   {% endif %}
+  {% if note and recommendations %}
+  <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">{{ note }}</p>
+  {% endif %}
 
   {% if not recommendations %}
   <div class="empty">
@@ -116,6 +119,7 @@
               <th style="width:40px;">Select</th>
               <th>Code</th>
               <th>Name</th>
+              <th>Scope</th>
               <th>Category</th>
               <th>Version</th>
               <th></th>
@@ -134,6 +138,13 @@
               <td>
                 <a href="/frameworks/{{ fw.id }}">{{ fw.name }}</a>
                 {% if fw.is_scf %}<span class="badge success" style="margin-left:4px;">SCF</span>{% endif %}
+              </td>
+              <td>
+                {% if fw.scope == "jurisdiction" %}
+                <span class="badge primary" title="Specific to {{ fw.jurisdiction_codes|join(', ') }}">{{ fw.jurisdiction_codes|join(', ') }}</span>
+                {% else %}
+                <span class="badge">Global</span>
+                {% endif %}
               </td>
               <td>{{ fw.category or "—" }}</td>
               <td>{{ fw.version_label or "—" }}</td>

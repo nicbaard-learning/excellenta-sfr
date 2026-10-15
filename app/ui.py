@@ -16,7 +16,7 @@ from app.database import get_session
 from app.services.comparison_service import ComparisonService
 from app.services.control_service import ControlService
 from app.services.framework_service import FrameworkService
-from app.services.recommendation_service import RecommendationService
+from app.services.recommendation_service import RecommendationInputError, RecommendationService
 
 logger = logging.getLogger(__name__)
 
@@ -349,6 +349,7 @@ async def recommend_frameworks(
     applied_filters = []
     recommended_ids = set()
     error = None
+    note = None
     selected_jurisdiction = jurisdiction
     selected_business_model = business_model
     selected_category = category
@@ -365,10 +366,14 @@ async def recommend_frameworks(
                 firm_size=firm_size,
                 threat_profile=threat_profile,
                 search=search,
+                max_controls=0,
             )
             recommendations = result["recommendations"]
             applied_filters = result["applied_filters"]
-            recommended_ids = {fw["id"] for fw in recommendations}
+            note = result.get("note")
+        except RecommendationInputError as exc:
+            error = str(exc)
+            recommendations = []
         except Exception as exc:
             error = str(exc)
             recommendations = []
@@ -391,6 +396,7 @@ async def recommend_frameworks(
             "applied_filters": applied_filters,
             "recommended_ids": recommended_ids,
             "error": error,
+            "note": note,
         },
     )
 

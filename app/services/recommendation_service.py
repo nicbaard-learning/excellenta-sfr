@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-
+import threading
+import time
 from typing import Any
 
-from sqlalchemy import or_ as _or
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_ as _or
+from sqlalchemy.orm import Session, joinedload
 
+from app.models.applicability import FrameworkApplicabilityRule
 from app.models.business_model import BusinessModel
 from app.models.control import Control, Domain
 from app.models.framework import Framework, FrameworkVersion
@@ -17,6 +19,49 @@ from app.models.mapping import ControlMapping
 
 logger = logging.getLogger(__name__)
 
+# EU member states: frameworks tagged "EU" (GDPR, NIS2, DORA, ...) also apply
+# to a request for any of these jurisdictions.
+EU_MEMBER_STATES: frozenset[str] = frozenset({
+    "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+    "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+})
+
+# Common names that differ from the seeded jurisdiction code/name.
+JURISDICTION_ALIASES: dict[str, str] = {
+    "UK": "GB",
+    "GREAT BRITAIN": "GB",
+    "USA": "US",
+    "UAE": "AE",
+    "RSA": "ZA",
+}
+
+# Optional filters, in the order they are relaxed when the combination
+# matches nothing. Jurisdiction is never relaxed; free-text search is the
+# most explicit signal and is relaxed last.
+RELAX_ORDER = ("category", "size", "threat_profile", "privacy_context", "domain", "business_model", "search")
+
+DEFAULT_MAX_CONTROLS = 25
+_CACHE_TTL_SECONDS = 3600
+_cache: dict[tuple, tuple[float, dict]] = {}
+_cache_lock = threading.Lock()
+
+
+def clear_recommendation_cache() -> None:
+    """Drop cached recommendation results (call after data changes)."""
+    with _cache_lock:
+        _cache.clear()
+
+
+class RecommendationInputError(ValueError):
+    """Raised for requests that cannot be answered (unknown jurisdiction, no filters)."""
+
+    def __init__(self, message: str, **extra: Any):
+        super().__init__(message)
+        self.extra = extra
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"detail": str(self), **self.extra}
+
 
 class RecommendationService:
     """Service layer for framework recommendation operations."""
@@ -24,6 +69,7 @@ class RecommendationService:
     def __init__(self, session: Session):
         self.session = session
 
+    # ── Public API ────────────────────────────────────────────────────
     def recommend_by_context(
         self,
         category: str | None = None,
@@ -35,270 +81,356 @@ class RecommendationService:
         firm_size: str | None = None,
         threat_profile: str | None = None,
         search: str | None = None,
+        max_controls: int = DEFAULT_MAX_CONTROLS,
     ) -> dict:
         """Recommend frameworks based on context attributes.
 
-        Returns data-rich compliance blueprints including control details,
-        maturity levels, and firm-size solutions where available.
+        * ``jurisdiction`` is a hard filter: results are frameworks tagged for
+          that jurisdiction (scope ``"jurisdiction"``) plus untagged, global
+          frameworks (scope ``"global"``). Frameworks tagged only for other
+          jurisdictions are never returned.
+        * The other filters are optional and are relaxed in ``RELAX_ORDER``
+          when their combination matches nothing.
+
+        Raises RecommendationInputError when no filter is given or the
+        jurisdiction is unknown.
         """
-        query = self.session.query(Framework).filter(Framework.is_scf == False)  # noqa: E712
+        filters = {
+            "category": _clean(category),
+            "business_model": _clean(business_model),
+            "domain": _clean(domain),
+            "privacy_context": _clean(privacy_context),
+            "size": _clean(firm_size) or _clean(size),
+            "threat_profile": _clean(threat_profile),
+            "search": _clean(search),
+        }
+        jurisdiction = _clean(jurisdiction)
+        if not jurisdiction and not any(filters.values()):
+            raise RecommendationInputError(
+                "At least one filter is required (e.g. jurisdiction, business_model, search).",
+                valid_filters=["jurisdiction", *RELAX_ORDER],
+            )
+        max_controls = max(0, min(int(max_controls or 0), 100))
 
-        # Build filter criteria from applicability rules
-        filters_applied: list[str] = []
+        cache_key = (jurisdiction and jurisdiction.upper(), tuple(sorted(filters.items())), max_controls)
+        with _cache_lock:
+            hit = _cache.get(cache_key)
+        if hit and time.monotonic() - hit[0] < _CACHE_TTL_SECONDS:
+            return hit[1]
 
+        result = self._recommend(jurisdiction, filters, max_controls)
+        with _cache_lock:
+            _cache[cache_key] = (time.monotonic(), result)
+        return result
+
+    # ── Core logic ────────────────────────────────────────────────────
+    def _recommend(self, jurisdiction: str | None, filters: dict[str, str | None], max_controls: int) -> dict:
+        # Validate the jurisdiction before doing any other work.
+        jur_codes, jur_label = self._resolve_jurisdiction(jurisdiction) if jurisdiction else (set(), "")
+        fw_jurisdictions = self._framework_jurisdiction_codes()
+        all_ids = {
+            fid for (fid,) in self.session.query(Framework.id).filter(Framework.is_scf == False)  # noqa: E712
+        }
+
+        # Each supplied filter resolves to the set of framework ids it allows.
+        matches: dict[str, set[int]] = {}
+        labels: dict[str, str] = {}
+        unmatched: list[str] = []
+        for name in RELAX_ORDER:
+            value = filters[name]
+            if not value:
+                continue
+            ids, label = self._filter_ids(name, value)
+            if ids is None:
+                unmatched.append(f"{name}='{value}' (unknown value, ignored)")
+                continue
+            matches[name] = ids
+            labels[name] = label
+
+        notes: list[str] = []
         if jurisdiction:
-            # Try lookup by code, name, or region — so "NA", "North America",
-            # "United States", and "US" all resolve to the matching jurisdictions.
-            j = (
-                self.session.query(Jurisdiction)
-                .filter(
-                    Jurisdiction.code.ilike(jurisdiction)
-                    | Jurisdiction.name.ilike(jurisdiction)
-                    | Jurisdiction.region.ilike(jurisdiction)
-                )
-                .first()
+            country_pool = {fid for fid in all_ids if fw_jurisdictions.get(fid, set()) & jur_codes}
+            global_pool = {fid for fid in all_ids if not fw_jurisdictions.get(fid)}
+
+            country_ids, country_applied, country_relaxed = _apply_with_relaxation(
+                country_pool, matches, allow_empty_filters=True
             )
-            if j:
-                filters_applied.append(f"jurisdiction={j.code}")
-                # Find frameworks linked to this jurisdiction
-                query = query.filter(
-                    Framework.jurisdictions.any(jurisdiction_id=j.id)
-                )
-            else:
-                # Jurisdiction didn't match — note it but don't filter
-                filters_applied.append(f"jurisdiction='{jurisdiction}' (not found, skipped)")
-
-        if domain:
-            d = (
-                self.session.query(Domain)
-                .filter(Domain.code.ilike(domain) | Domain.name.ilike(domain))
-                .first()
+            global_ids, global_applied, global_relaxed = _apply_with_relaxation(
+                global_pool, matches, allow_empty_filters=not matches
             )
-            if d:
-                filters_applied.append(f"domain={d.code}")
-                # Filter to frameworks that have controls in this domain
-                fw_ids_in_domain = (
-                    self.session.query(ControlMapping.framework_id)
-                    .join(Control, ControlMapping.control_id == Control.id)
-                    .filter(Control.domain_id == d.id)
-                    .distinct()
-                    .subquery()
-                )
-                query = query.filter(Framework.id.in_(fw_ids_in_domain))
+            groups = [("jurisdiction", country_ids), ("global", global_ids)]
+            scope_filters = {
+                "jurisdiction": [jur_label] + [labels[n] for n in country_applied],
+                "global": [labels[n] for n in global_applied],
+            }
+            applied = [jur_label] + [labels[n] for n in RELAX_ORDER if n in country_applied or n in global_applied]
+            relaxed = sorted(set(country_relaxed) | set(global_relaxed), key=RELAX_ORDER.index)
+            if not country_pool:
+                notes.append(f"No frameworks in the SCF workbook are specific to {jur_label.split('=', 1)[1]}.")
+            elif country_relaxed and len(country_relaxed) == len(matches):
+                notes.append("Jurisdiction-specific frameworks are listed regardless of the other filters.")
+        else:
+            ids, applied_names, relaxed = _apply_with_relaxation(all_ids, matches, allow_empty_filters=False)
+            groups = [
+                ("jurisdiction", {fid for fid in ids if fw_jurisdictions.get(fid)}),
+                ("global", {fid for fid in ids if not fw_jurisdictions.get(fid)}),
+            ]
+            applied = [labels[n] for n in RELAX_ORDER if n in applied_names]
+            scope_filters = {"jurisdiction": applied, "global": applied}
 
-        if category:
-            filters_applied.append(f"category={category}")
-            query = query.filter(Framework.category.ilike(f"%{category}%"))
-
-        if business_model:
-            filters_applied.append(f"business_model={business_model}")
-
-            # Use module-level imports for Control, Domain, ControlMapping
-
-            # Condition 1: via applicability_rules (exact business_model match)
-            rule_condition = Framework.applicability_rules.any(
-                attribute_name="business_model",
-                attribute_value=business_model,
+        if relaxed:
+            notes.append(
+                "No frameworks matched every filter, so these were relaxed: "
+                + ", ".join(labels[n] for n in relaxed) + "."
             )
+        notes.extend(unmatched)
 
-            bm = self.session.query(BusinessModel).filter(
-                BusinessModel.code == business_model
-            ).first()
+        recommendations = self._build_blueprints(groups, fw_jurisdictions, max_controls)
+        if not recommendations:
+            notes.append("No frameworks matched. Try fewer filters.")
 
-            conditions = [rule_condition]
+        return {
+            "recommendations": recommendations,
+            "total": len(recommendations),
+            "applied_filters": applied,
+            "applied_filters_by_scope": scope_filters,
+            "relaxed_filters": [labels[n] for n in relaxed],
+            "firm_size": filters["size"],
+            "threat_profile": filters["threat_profile"],
+            "note": " ".join(notes) or None,
+        }
 
+    def _resolve_jurisdiction(self, value: str) -> tuple[set[str], str]:
+        """Resolve a code, name or region to the set of jurisdiction codes it covers."""
+        key = JURISDICTION_ALIASES.get(value.upper(), value)
+        j = (
+            self.session.query(Jurisdiction)
+            .filter(func.upper(Jurisdiction.code) == key.upper())
+            .first()
+        ) or (
+            self.session.query(Jurisdiction)
+            .filter(func.upper(Jurisdiction.name) == key.upper())
+            .first()
+        )
+        if j:
+            codes = {j.code}
+            label = j.code
+        else:
+            region = (
+                self.session.query(Jurisdiction.code)
+                .filter(func.upper(Jurisdiction.region) == key.upper())
+                .all()
+            )
+            if not region:
+                raise RecommendationInputError(
+                    f"Unknown jurisdiction '{value}'. Use an ISO code or name from "
+                    "GET /api/recommend/jurisdictions.",
+                    valid_jurisdictions=sorted(c for (c,) in self.session.query(Jurisdiction.code)),
+                )
+            codes = {c for (c,) in region}
+            label = key.upper()
+        if codes & EU_MEMBER_STATES:
+            codes.add("EU")
+        return codes, f"jurisdiction={label}"
+
+    def _framework_jurisdiction_codes(self) -> dict[int, set[str]]:
+        rows = (
+            self.session.query(FrameworkJurisdiction.framework_id, Jurisdiction.code)
+            .join(Jurisdiction, FrameworkJurisdiction.jurisdiction_id == Jurisdiction.id)
+            .all()
+        )
+        result: dict[int, set[str]] = {}
+        for fid, code in rows:
+            result.setdefault(fid, set()).add(code)
+        return result
+
+    def _filter_ids(self, name: str, value: str) -> tuple[set[int] | None, str]:
+        """Return (framework ids allowed by this filter, label), or (None, label) if unknown."""
+        s = self.session
+        if name == "domain":
+            d = s.query(Domain).filter(Domain.code.ilike(value) | Domain.name.ilike(value)).first()
+            if not d:
+                return None, f"domain={value}"
+            rows = (
+                s.query(ControlMapping.framework_id)
+                .join(Control, ControlMapping.control_id == Control.id)
+                .filter(Control.domain_id == d.id)
+                .distinct()
+            )
+            return {r[0] for r in rows}, f"domain={d.code}"
+
+        if name == "category":
+            rows = s.query(Framework.id).filter(Framework.category.ilike(f"%{value}%"))
+            return {r[0] for r in rows}, f"category={value}"
+
+        if name == "business_model":
+            ids = self._rule_ids("business_model", value)
+            bm = s.query(BusinessModel).filter(func.upper(BusinessModel.code) == value.upper()).first()
             if bm:
-                # Build search keywords from business model code + name
-                keywords = {bm.code}  # e.g. "IAM"
-                for part in bm.name.replace("&", "").split():
-                    part = part.strip()
-                    if len(part) >= 3:
-                        keywords.add(part)
+                ids |= self._business_model_keyword_ids(bm)
+            return ids, f"business_model={bm.code if bm else value}"
 
-                # Remove overly generic words that would match too broadly
-                generic = {
-                    "management", "service", "services", "provider",
-                    "platform", "software", "technology", "solution",
-                    "vendor", "professional", "security", "data",
-                    "financial", "administration", "system", "systems",
-                }
-                keywords = keywords - generic
+        if name == "privacy_context":
+            return self._rule_ids("privacy_context", value), f"privacy_context={value}"
 
-                if keywords:
-                    # Match against control titles, SCF IDs, and domain names
-                    match_conditions = []
-                    for kw in keywords:
-                        match_conditions.append(
-                            Control.title.ilike(f"%{kw}%")
-                        )
-                        match_conditions.append(
-                            Control.scf_id.ilike(f"{kw}%")
-                        )
-                        match_conditions.append(
-                            Domain.name.ilike(f"%{kw}%")
-                        )
-                        match_conditions.append(
-                            Domain.code.ilike(f"%{kw}%")
-                        )
+        if name == "size":
+            return self._rule_ids("size", value.lower()), f"size={value}"
 
-                    fw_via_controls = (
-                        self.session.query(ControlMapping.framework_id)
-                        .join(Control, ControlMapping.control_id == Control.id)
-                        .join(Domain, Control.domain_id == Domain.id)
-                        .filter(_or(*match_conditions))
-                        .distinct()
-                        .subquery()
-                    )
-                    conditions.append(Framework.id.in_(fw_via_controls))
-
-            query = query.filter(_or(*conditions))
-
-        if privacy_context:
-            filters_applied.append(f"privacy_context={privacy_context}")
-            query = query.filter(
-                Framework.applicability_rules.any(
-                    attribute_name="privacy_context",
-                    attribute_value=privacy_context,
-                )
+        if name == "threat_profile":
+            pattern = f"%{value}%"
+            rows = s.query(Framework.id).filter(
+                Framework.name.ilike(pattern) | Framework.description.ilike(pattern) | Framework.category.ilike(pattern)
             )
+            return {r[0] for r in rows}, f"threat_profile={value}"
 
-        # Support both size (deprecated) and firm_size (new)
-        effective_size = firm_size or size
-        if effective_size:
-            filters_applied.append(f"size={effective_size}")
-            query = query.filter(
-                Framework.applicability_rules.any(
-                    attribute_name="size",
-                    attribute_value=effective_size,
-                )
-            )
-
-        if threat_profile:
-            filters_applied.append(f"threat_profile={threat_profile}")
-            # Threat profile filtering via keyword search on framework name/category
-            pattern = f"%{threat_profile}%"
-            query = query.filter(
-                Framework.name.ilike(pattern)
-                | Framework.description.ilike(pattern)
-                | Framework.category.ilike(pattern)
-            )
-
-        if search:
-            filters_applied.append(f"search={search}")
-            pattern = f"%{search}%"
-            query = query.filter(
+        if name == "search":
+            pattern = f"%{value}%"
+            rows = s.query(Framework.id).filter(
                 Framework.code.ilike(pattern)
                 | Framework.name.ilike(pattern)
                 | Framework.description.ilike(pattern)
                 | Framework.publisher.ilike(pattern)
             )
+            return {r[0] for r in rows}, f"search={value}"
 
-        frameworks = query.order_by(Framework.code).all()
+        raise ValueError(name)
 
-        # ── Graceful fallback: if combined strict filters return 0 results,
-        #    try again without jurisdiction and privacy_context (the most
-        #    common over-filters from natural-language queries).
-        if not frameworks and filters_applied:
-            retry_filters = [f for f in filters_applied
-                             if not f.startswith("jurisdiction=") and not f.startswith("privacy_context=")]
-            if len(retry_filters) < len(filters_applied):
-                logger.info(
-                    "0 results with strict filters (%s) — retrying without jurisdiction/privacy",
-                    filters_applied,
-                )
-                return self.recommend_by_context(
-                    category=category,
-                    business_model=business_model,
-                    domain=domain,
-                    size=size,
-                    firm_size=firm_size,
-                    threat_profile=threat_profile,
-                    search=search,
-                )
+    def _rule_ids(self, attribute: str, value: str) -> set[int]:
+        rows = self.session.query(FrameworkApplicabilityRule.framework_id).filter(
+            FrameworkApplicabilityRule.attribute_name == attribute,
+            func.upper(FrameworkApplicabilityRule.attribute_value) == value.upper(),
+        )
+        return {r[0] for r in rows}
 
-        # Build data-rich compliance blueprints (imports are at module level)
-        results = []
-        for fw in frameworks:
-            active_ver = (
-                self.session.query(FrameworkVersion)
-                .filter(
-                    FrameworkVersion.framework_id == fw.id,
-                    FrameworkVersion.status == "active",
-                )
-                .first()
-            )
-
-            # Get jurisdictions for this framework
-            jur_codes = [
-                j.code for j in
-                (self.session.query(Jurisdiction)
-                 .join(FrameworkJurisdiction)
-                 .filter(FrameworkJurisdiction.framework_id == fw.id)
-                 .all())
+    def _business_model_keyword_ids(self, bm: BusinessModel) -> set[int]:
+        """Frameworks mapped to controls whose title/ID/domain mentions the business model."""
+        keywords = {bm.code}
+        for part in bm.name.replace("&", "").split():
+            part = part.strip()
+            if len(part) >= 3:
+                keywords.add(part)
+        # Overly generic words would match almost every framework.
+        keywords = {k for k in keywords if k.lower() not in {
+            "management", "service", "services", "provider", "platform", "software", "technology",
+            "solution", "vendor", "professional", "security", "data", "financial", "administration",
+            "system", "systems",
+        }}
+        if not keywords:
+            return set()
+        conditions = []
+        for kw in keywords:
+            conditions += [
+                Control.title.ilike(f"%{kw}%"),
+                Control.scf_id.ilike(f"{kw}%"),
+                Domain.name.ilike(f"%{kw}%"),
+                Domain.code.ilike(f"%{kw}%"),
             ]
+        rows = (
+            self.session.query(ControlMapping.framework_id)
+            .join(Control, ControlMapping.control_id == Control.id)
+            .join(Domain, Control.domain_id == Domain.id)
+            .filter(_or(*conditions))
+            .distinct()
+        )
+        return {r[0] for r in rows}
 
-            # Get top controls (first 10) with maturity and firm-size data
-            mapped_control_ids = (
-                self.session.query(ControlMapping.control_id)
-                .filter(ControlMapping.framework_id == fw.id)
-                .subquery()
+    # ── Result building (constant number of queries) ──────────────────
+    def _build_blueprints(
+        self,
+        groups: list[tuple[str, set[int]]],
+        fw_jurisdictions: dict[int, set[str]],
+        max_controls: int,
+    ) -> list[dict]:
+        ids = set().union(*(g for _, g in groups))
+        if not ids:
+            return []
+
+        frameworks = {fw.id: fw for fw in self.session.query(Framework).filter(Framework.id.in_(ids))}
+        versions = {
+            v.framework_id: v.version_label
+            for v in self.session.query(FrameworkVersion).filter(
+                FrameworkVersion.framework_id.in_(ids), FrameworkVersion.status == "active"
             )
-            controls = (
-                self.session.query(Control)
-                .filter(Control.id.in_(mapped_control_ids))
-                .order_by(Control.scf_id)
-                .limit(25)
-                .all()
-            )
-
-            top_controls = []
-            for c in controls:
-                tc = {
-                    "scf_id": c.scf_id,
-                    "title": c.title,
-                    "description": c.description[:300] if c.description else None,
-                    "domain_code": c.domain.code if c.domain else None,
-                    "relative_weighting": float(c.relative_weighting) if c.relative_weighting else None,
-                    "cmm_level_0": c.cmm_level_0,
-                    "cmm_level_1": c.cmm_level_1,
-                    "cmm_level_2": c.cmm_level_2,
-                    "cmm_level_3": c.cmm_level_3,
-                    "cmm_level_4": c.cmm_level_4,
-                    "cmm_level_5": c.cmm_level_5,
-                    "solutions_micro_small": c.solutions_micro_small,
-                    "solutions_small": c.solutions_small,
-                    "solutions_medium": c.solutions_medium,
-                    "solutions_large": c.solutions_large,
-                    "solutions_enterprise": c.solutions_enterprise,
-                }
-                top_controls.append(tc)
-
-            results.append({
-                "id": fw.id,
-                "code": fw.code,
-                "name": fw.name,
-                "category": fw.category,
-                "version_label": active_ver.version_label if active_ver else None,
-                "is_scf": fw.is_scf,
-                "jurisdiction_codes": jur_codes,
-                "control_count": len(controls),
-                "top_controls": top_controls,
-            })
-
-        return {
-            "recommendations": results,
-            "total": len(results),
-            "applied_filters": filters_applied,
-            "firm_size": effective_size,
-            "threat_profile": threat_profile,
-            "note": (
-                "Some optional filters were skipped because they matched no data. "
-                "Try calling with fewer filters (e.g. just business_model) for broader results."
-                if not frameworks and filters_applied
-                else None
-            ),
         }
+        control_counts = dict(
+            self.session.query(ControlMapping.framework_id, func.count(func.distinct(ControlMapping.control_id)))
+            .filter(ControlMapping.framework_id.in_(ids))
+            .group_by(ControlMapping.framework_id)
+            .all()
+        )
+        top_controls = self._top_controls(ids, max_controls) if max_controls else {}
 
+        results = []
+        for scope, group in groups:
+            for fid in sorted(group, key=lambda i: frameworks[i].code):
+                fw = frameworks[fid]
+                results.append({
+                    "id": fw.id,
+                    "code": fw.code,
+                    "name": fw.name,
+                    "description": fw.description,
+                    "publisher": fw.publisher,
+                    "source_url": fw.source_url,
+                    "category": fw.category,
+                    "version_label": versions.get(fid),
+                    "is_scf": fw.is_scf,
+                    "scope": scope,
+                    "jurisdiction_codes": sorted(fw_jurisdictions.get(fid, set())),
+                    "control_count": control_counts.get(fid, 0),
+                    "top_controls": top_controls.get(fid, []),
+                })
+        return results
+
+    def _top_controls(self, framework_ids: set[int], limit: int) -> dict[int, list[dict]]:
+        """First ``limit`` mapped controls (by SCF #) for each framework, in one query."""
+        pairs = (
+            self.session.query(ControlMapping.framework_id, ControlMapping.control_id)
+            .filter(ControlMapping.framework_id.in_(framework_ids))
+            .distinct()
+            .subquery()
+        )
+        ranked = (
+            self.session.query(
+                pairs.c.framework_id,
+                pairs.c.control_id,
+                func.row_number().over(
+                    partition_by=pairs.c.framework_id, order_by=Control.scf_id
+                ).label("rn"),
+            )
+            .join(Control, Control.id == pairs.c.control_id)
+            .subquery()
+        )
+        rows = (
+            self.session.query(ranked.c.framework_id, Control)
+            .join(Control, Control.id == ranked.c.control_id)
+            .options(joinedload(Control.domain))
+            .filter(ranked.c.rn <= limit)
+            .order_by(ranked.c.framework_id, Control.scf_id)
+            .all()
+        )
+        result: dict[int, list[dict]] = {}
+        for fid, c in rows:
+            result.setdefault(fid, []).append({
+                "scf_id": c.scf_id,
+                "title": c.title,
+                "description": c.description[:300] if c.description else None,
+                "domain_code": c.domain.code if c.domain else None,
+                "relative_weighting": float(c.relative_weighting) if c.relative_weighting else None,
+                "cmm_level_0": c.cmm_level_0,
+                "cmm_level_1": c.cmm_level_1,
+                "cmm_level_2": c.cmm_level_2,
+                "cmm_level_3": c.cmm_level_3,
+                "cmm_level_4": c.cmm_level_4,
+                "cmm_level_5": c.cmm_level_5,
+                "solutions_micro_small": c.solutions_micro_small,
+                "solutions_small": c.solutions_small,
+                "solutions_medium": c.solutions_medium,
+                "solutions_large": c.solutions_large,
+                "solutions_enterprise": c.solutions_enterprise,
+            })
+        return result
+
+    # ── Reference lists ───────────────────────────────────────────────
     def recommend_by_category(self, category: str) -> dict:
         """Recommend frameworks for a given TPRM vendor category."""
         return self.recommend_by_context(category=category)
@@ -320,10 +452,6 @@ class RecommendationService:
 
     def list_domains(self) -> list[dict[str, Any]]:
         """List all SCF domains with control counts."""
-        from sqlalchemy import func
-
-        from app.models.control import Control
-
         results = (
             self.session.query(
                 Domain.id,
@@ -368,3 +496,35 @@ class RecommendationService:
             }
             for m in models
         ]
+
+
+def _clean(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def _apply_with_relaxation(
+    pool: set[int],
+    matches: dict[str, set[int]],
+    *,
+    allow_empty_filters: bool,
+) -> tuple[set[int], list[str], list[str]]:
+    """Intersect ``pool`` with every filter, relaxing filters in RELAX_ORDER until something matches.
+
+    Returns (ids, applied filter names, relaxed filter names). When
+    ``allow_empty_filters`` is False, the last remaining filter is never
+    dropped, so an empty result is returned instead of the whole pool.
+    """
+    active = [n for n in RELAX_ORDER if n in matches]
+    relaxed: list[str] = []
+    while True:
+        ids = set(pool)
+        for n in active:
+            ids &= matches[n]
+        if ids or not active:
+            return ids, active, relaxed
+        if len(active) == 1 and not allow_empty_filters:
+            return ids, active, relaxed
+        relaxed.append(active.pop(0))

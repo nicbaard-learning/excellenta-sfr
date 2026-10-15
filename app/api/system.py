@@ -95,6 +95,43 @@ def reimport_objectives(
         wb.close()
 
 
+@router.post("/resync-frameworks")
+def resync_frameworks(
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Re-sync frameworks, jurisdictions and control mappings with the SCF workbook.
+
+    Protected by `X-API-Key` header – must match `ADMIN_API_KEY`.
+
+    One framework per mapping column of the SCF sheet, named and tagged from
+    the Authoritative Sources sheet. Mappings imported from the wrong column
+    are removed and missing ones added; frameworks that are not workbook
+    columns (legacy duplicates) are deleted.
+    """
+    api_key = request.headers.get("X-API-Key", "")
+    if not api_key or not settings.admin_api_key or api_key != settings.admin_api_key:
+        return JSONResponse(status_code=403, content={"detail": "Forbidden – valid X-API-Key header required"})
+
+    workbook_path = settings.default_workbook
+    if not os.path.exists(workbook_path):
+        return JSONResponse(status_code=500, content={"detail": f"Workbook not found at {workbook_path!r}"})
+
+    from app.importers.catalogue import resync_from_workbook
+
+    wb = openpyxl.load_workbook(workbook_path, data_only=True, read_only=True)
+    try:
+        result = resync_from_workbook(session, wb)
+        session.commit()
+        return {"success": True, **result}
+    except Exception:
+        session.rollback()
+        logger.exception("Framework resync failed")
+        return JSONResponse(status_code=500, content={"detail": "Framework resync failed – see server logs"})
+    finally:
+        wb.close()
+
+
 @router.get("/update-check")
 def system_update_check(
     force: bool = False,

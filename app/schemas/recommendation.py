@@ -1,6 +1,8 @@
 """Recommendation request/response Pydantic models for TPRM use cases."""
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from app.schemas.framework import FrameworkWithVersionResponse
 
@@ -16,6 +18,7 @@ class FrameworkRecommendationRequest(BaseModel):
     firm_size: str | None = None
     threat_profile: str | None = None
     search: str | None = None
+    max_controls: int = Field(25, ge=0, le=100, description="Top controls returned per framework (0 to omit)")
 
 
 class RecommendedControl(BaseModel):
@@ -43,9 +46,13 @@ class FrameworkBlueprint(BaseModel):
     id: int
     code: str
     name: str
+    description: str | None = None
+    publisher: str | None = None
+    source_url: str | None = None
     category: str | None = None
     version_label: str | None = None
     is_scf: bool = False
+    scope: Literal["jurisdiction", "global"]
     jurisdiction_codes: list[str] = []
     control_count: int = 0
     top_controls: list[RecommendedControl] = []
@@ -56,6 +63,8 @@ class FrameworkRecommendationResponse(BaseModel):
     recommendations: list[FrameworkBlueprint]
     total: int
     applied_filters: list[str]
+    applied_filters_by_scope: dict[str, list[str]] = {}
+    relaxed_filters: list[str] = []
     firm_size: str | None = None
     threat_profile: str | None = None
     note: str | None = None

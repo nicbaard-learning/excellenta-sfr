@@ -12,6 +12,7 @@ from app.schemas.framework import (
     FrameworkListResponse,
     FrameworkResponse,
     FrameworkVersionResponse,
+    RelatedFrameworkResponse,
 )
 from app.schemas.control import ControlListResponse, ControlResponse
 from app.services.framework_service import FrameworkService
@@ -23,24 +24,36 @@ router = APIRouter(prefix="/api/frameworks", tags=["Frameworks"])
 @router.get("", response_model=FrameworkListResponse)
 def list_frameworks(
     category: str | None = Query(None, description="Filter by framework category"),
+    jurisdiction: str | None = Query(
+        None, description="Only frameworks tagged with this jurisdiction code (e.g. ZA, GB, EU)"
+    ),
     session: Session = Depends(get_session),
 ):
-    """List all compliance frameworks with summary counts."""
+    """List all compliance frameworks with summary counts and jurisdiction codes.
+
+    Frameworks with an empty `jurisdiction_codes` list are global.
+    """
     svc = FrameworkService(session)
     frameworks = svc.list_frameworks(category=category)
-    items = []
-    for fw in frameworks:
-        ver_count = len(svc.get_versions(fw.id))
-        ctrl_count = svc.get_control_count(fw.id)
-        items.append(FrameworkListItem(
+    version_counts = svc.get_all_version_counts()
+    control_counts = svc.get_all_control_counts()
+    jurisdiction_codes = svc.get_all_jurisdiction_codes()
+    if jurisdiction:
+        wanted = jurisdiction.strip().upper()
+        frameworks = [fw for fw in frameworks if wanted in jurisdiction_codes.get(fw.id, [])]
+    items = [
+        FrameworkListItem(
             id=fw.id,
             code=fw.code,
             name=fw.name,
             category=fw.category,
             is_scf=fw.is_scf,
-            version_count=ver_count,
-            control_count=ctrl_count,
-        ))
+            version_count=version_counts.get(fw.id, 0),
+            control_count=control_counts.get(fw.id, 0),
+            jurisdiction_codes=jurisdiction_codes.get(fw.id, []),
+        )
+        for fw in frameworks
+    ]
     return FrameworkListResponse(items=items, total=len(items))
 
 
@@ -105,28 +118,37 @@ def get_framework_versions(
     ) for v in versions]
 
 
-@router.get("/{framework_id}/related", response_model=list[FrameworkResponse])
+@router.get("/{framework_id}/related", response_model=list[RelatedFrameworkResponse])
 def get_related_frameworks(
     framework_id: int,
+    limit: int = Query(10, ge=1, le=100, description="Maximum number of related frameworks"),
     session: Session = Depends(get_session),
 ):
-    """Find frameworks related to the given one (via shared control mappings)."""
+    """Frameworks sharing the most SCF controls with this one, ranked by overlap.
+
+    `overlap_percent` is the share of this framework's mapped SCF controls
+    that the related framework also maps to.
+    """
     svc = FrameworkService(session)
     if not svc.get_framework(framework_id):
         raise HTTPException(status_code=404, detail="Framework not found")
-    related = svc.get_related_frameworks(framework_id)
-    return [FrameworkResponse(
-        id=fw.id,
-        code=fw.code,
-        name=fw.name,
-        category=fw.category,
-        description=fw.description,
-        publisher=fw.publisher,
-        source_url=fw.source_url,
-        is_scf=fw.is_scf,
-        created_at=fw.created_at,
-        updated_at=fw.updated_at,
-    ) for fw in related]
+    return [
+        RelatedFrameworkResponse(
+            id=r["framework"].id,
+            code=r["framework"].code,
+            name=r["framework"].name,
+            category=r["framework"].category,
+            description=r["framework"].description,
+            publisher=r["framework"].publisher,
+            source_url=r["framework"].source_url,
+            is_scf=r["framework"].is_scf,
+            created_at=r["framework"].created_at,
+            updated_at=r["framework"].updated_at,
+            shared_controls=r["shared_controls"],
+            overlap_percent=r["overlap_percent"],
+        )
+        for r in svc.get_related_with_overlap(framework_id, limit=limit)
+    ]
 
 
 @router.get("/{framework_id}/controls", response_model=ControlListResponse)

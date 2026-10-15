@@ -31,6 +31,13 @@ class FrameworkListItem(BaseModel):
     is_scf: bool = False
     version_count: int = 0
     control_count: int = 0
+    jurisdiction_codes: list[str] = []
+
+
+class RelatedFrameworkResponse(FrameworkResponse):
+    """A framework related by shared SCF controls."""
+    shared_controls: int = 0
+    overlap_percent: float = 0.0
 
 
 class FrameworkDetailResponse(FrameworkResponse):
