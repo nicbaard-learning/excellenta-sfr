@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # ── Admin ──────────────────────────────────────────────────────────
     admin_api_key: str = ""
 
+    # ── GitHub update check ───────────────────────────────────────────
+    # Optional token for the SCF release check. Without it, requests share
+    # GitHub's 60/hour unauthenticated limit with everything else on the host IP.
+    github_token: str = ""
+
     # ── MCP ────────────────────────────────────────────────────────────
     mcp_api_key: str = ""
 

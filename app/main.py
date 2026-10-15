@@ -39,8 +39,39 @@ try:
     import asyncio
     from app.services.github_service import check_for_updates
 
-    async def github_update_checker(interval_hours: int = 24):
-        """Background task that checks for SCF updates every N hours."""
+    _github_check_lock = None  # held open for the worker's lifetime
+
+    def _claim_github_check() -> bool:
+        """Return True in exactly one gunicorn worker per machine.
+
+        Each worker starts its own lifespan, so without this all of them would
+        hit the GitHub API at once. The first worker to take an exclusive lock
+        on a temp file runs the scheduled check; the OS releases the lock if
+        that worker exits, so a restarted worker can take over.
+        """
+        global _github_check_lock
+        try:
+            import fcntl
+        except ImportError:  # Windows dev machine: single process, just run it
+            return True
+        import tempfile
+        lock_path = os.path.join(tempfile.gettempdir(), "sfr-github-update-check.lock")
+        handle = open(lock_path, "w")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            return False
+        _github_check_lock = handle
+        return True
+
+    async def github_update_checker(interval_hours: int = 24, initial_delay_seconds: int = 60):
+        """Background task that checks for SCF updates every N hours.
+
+        Waits a little after startup so deploys and restarts don't fire a
+        GitHub request immediately.
+        """
+        await asyncio.sleep(initial_delay_seconds)
         while True:
             try:
                 logger.info("Running scheduled GitHub update check...")
@@ -66,9 +97,10 @@ try:
         # Create tables if they don't exist (for dev/POC convenience)
         Base.metadata.create_all(bind=engine)
         # Start background GitHub update checker
-        task = asyncio.create_task(github_update_checker(24))
+        task = asyncio.create_task(github_update_checker(24)) if _claim_github_check() else None
         yield
-        task.cancel()
+        if task:
+            task.cancel()
         logger.info("Shutting down SFR")
 
     app = FastAPI(

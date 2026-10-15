@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import httpx
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import SessionLocal
 from app.models.import_run import ImportRun
 
@@ -29,6 +30,48 @@ DEFAULT_TIMEOUT = 15.0  # seconds
 # In-memory cache of the last check result
 _last_check: dict[str, Any] | None = None
 _last_check_time: datetime | None = None
+
+T = TypeVar("T")
+
+
+class GitHubRateLimited(Exception):
+    """GitHub refused the request because the API rate limit was hit."""
+
+
+def _github_headers() -> dict[str, str]:
+    """Request headers, with an Authorization header when GITHUB_TOKEN is set.
+
+    Unauthenticated calls share a 60-requests-per-hour limit per IP address;
+    a token raises that to 5,000 per hour for the token's owner.
+    """
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if settings.github_token:
+        headers["Authorization"] = f"Bearer {settings.github_token}"
+    return headers
+
+
+def _github_get(url: str) -> httpx.Response:
+    """GET a GitHub API URL, raising GitHubRateLimited on a rate-limit refusal."""
+    response = httpx.get(url, timeout=DEFAULT_TIMEOUT, headers=_github_headers())
+    if response.status_code in (403, 429) and (
+        response.headers.get("x-ratelimit-remaining") == "0"
+        or "rate limit" in response.text.lower()
+    ):
+        raise GitHubRateLimited(response.headers.get("x-ratelimit-reset"))
+    response.raise_for_status()
+    return response
+
+
+def _log_rate_limited(exc: GitHubRateLimited) -> None:
+    reset = exc.args[0] if exc.args else None
+    when = ""
+    if reset and str(reset).isdigit():
+        when = " until " + datetime.fromtimestamp(int(reset), timezone.utc).strftime("%H:%M UTC")
+    logger.info(
+        "GitHub update check skipped: API rate limit reached%s%s",
+        when,
+        "" if settings.github_token else " (set GITHUB_TOKEN to raise the limit)",
+    )
 
 
 class GitHubCheckResult:
@@ -67,6 +110,38 @@ class GitHubCheckResult:
         }
 
 
+def _fetch_or_none(fetch: Callable[[], T], what: str) -> T | None:
+    """Run a GitHub fetch, logging and swallowing every error except rate limits."""
+    try:
+        return fetch()
+    except GitHubRateLimited:
+        raise
+    except httpx.TimeoutException:
+        logger.warning("Timed out fetching %s from GitHub", what)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("GitHub API error fetching %s: %s", what, exc)
+    except Exception as exc:
+        logger.warning("Unexpected error fetching %s: %s", what, exc)
+    return None
+
+
+def _fetch_latest_release() -> dict[str, Any]:
+    data = _github_get(RELEASES_URL).json()
+    return {
+        "tag_name": data.get("tag_name"),
+        "html_url": data.get("html_url"),
+        "body": data.get("body", ""),
+        "published_at": data.get("published_at"),
+    }
+
+
+def _fetch_latest_commit() -> str | None:
+    data = _github_get(COMMITS_URL).json()
+    if data and len(data) > 0:
+        return data[0].get("sha")
+    return None
+
+
 def get_latest_github_release() -> dict[str, Any] | None:
     """Fetch the latest release from the SCF GitHub repository.
 
@@ -75,27 +150,9 @@ def get_latest_github_release() -> dict[str, Any] | None:
         None if the request fails.
     """
     try:
-        response = httpx.get(
-            RELEASES_URL,
-            timeout=DEFAULT_TIMEOUT,
-            headers={"Accept": "application/vnd.github.v3+json"},
-        )
-        response.raise_for_status()
-        data = response.json()
-        return {
-            "tag_name": data.get("tag_name"),
-            "html_url": data.get("html_url"),
-            "body": data.get("body", ""),
-            "published_at": data.get("published_at"),
-        }
-    except httpx.TimeoutException:
-        logger.warning("Timed out fetching latest release from GitHub")
-        return None
-    except httpx.HTTPStatusError as exc:
-        logger.warning("GitHub API error fetching latest release: %s", exc)
-        return None
-    except Exception as exc:
-        logger.warning("Unexpected error fetching latest release: %s", exc)
+        return _fetch_or_none(_fetch_latest_release, "latest release")
+    except GitHubRateLimited as exc:
+        _log_rate_limited(exc)
         return None
 
 
@@ -106,24 +163,9 @@ def get_latest_github_commit() -> str | None:
         The full commit SHA string if successful, None otherwise.
     """
     try:
-        response = httpx.get(
-            COMMITS_URL,
-            timeout=DEFAULT_TIMEOUT,
-            headers={"Accept": "application/vnd.github.v3+json"},
-        )
-        response.raise_for_status()
-        data = response.json()
-        if data and len(data) > 0:
-            return data[0].get("sha")
-        return None
-    except httpx.TimeoutException:
-        logger.warning("Timed out fetching latest commit from GitHub")
-        return None
-    except httpx.HTTPStatusError as exc:
-        logger.warning("GitHub API error fetching latest commit: %s", exc)
-        return None
-    except Exception as exc:
-        logger.warning("Unexpected error fetching latest commit: %s", exc)
+        return _fetch_or_none(_fetch_latest_commit, "latest commit")
+    except GitHubRateLimited as exc:
+        _log_rate_limited(exc)
         return None
 
 
@@ -156,13 +198,23 @@ def check_for_updates(session: Session | None = None) -> GitHubCheckResult:
         )
         current_tag = latest_import.latest_github_tag if latest_import else None
 
-        # Fetch latest from GitHub
-        release_data = get_latest_github_release()
-        latest_commit = get_latest_github_commit()
+        # Fetch latest from GitHub. If the first call is rate-limited, skip
+        # the second (it would be refused too) and log one INFO line.
+        release_data, latest_commit, rate_limited = None, None, False
+        try:
+            release_data = _fetch_or_none(_fetch_latest_release, "latest release")
+            latest_commit = _fetch_or_none(_fetch_latest_commit, "latest commit")
+        except GitHubRateLimited as exc:
+            _log_rate_limited(exc)
+            rate_limited = True
 
         if not release_data and not latest_commit:
             result = GitHubCheckResult(
-                error="Could not reach GitHub API",
+                error=(
+                    "GitHub API rate limit reached; try again later"
+                    if rate_limited
+                    else "Could not reach GitHub API"
+                ),
                 current_tag=current_tag,
             )
         else:
