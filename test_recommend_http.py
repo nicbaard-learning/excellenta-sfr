@@ -9,8 +9,9 @@ Tests the /api/recommend/frameworks endpoint for each business model.
 
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 import json
 
 EXPECTED_MIN = {
@@ -27,7 +28,7 @@ EXPECTED_MIN = {
 def check(endpoint: str) -> tuple[int, list[dict]]:
     """Hit an endpoint and return (total, recommendations)."""
     try:
-        with urllib.request.urlopen(endpoint, timeout=15) as resp:
+        with urllib.request.urlopen(endpoint, timeout=15) as resp:  # nosec B310 - scheme checked in main()
             data = json.loads(resp.read().decode())
             return data["total"], data["recommendations"]
     except urllib.error.HTTPError as e:
@@ -46,13 +47,16 @@ def main() -> None:
         sys.exit(1)
 
     base = sys.argv[1].rstrip("/")
+    if urllib.parse.urlsplit(base).scheme not in ("http", "https"):
+        print(f"Base URL must start with http:// or https://, got: {base}")
+        sys.exit(1)
     print(f"Testing against: {base}")
     print()
 
     # --- Health check first ---
     print("=== Health Check ===")
     try:
-        with urllib.request.urlopen(f"{base}/health", timeout=10) as resp:
+        with urllib.request.urlopen(f"{base}/health", timeout=10) as resp:  # nosec B310 - scheme checked above
             print(f"  /health → {json.loads(resp.read().decode())}")
     except Exception as e:
         print(f"  /health FAILED: {e}")
