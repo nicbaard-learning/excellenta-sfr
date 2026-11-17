@@ -202,33 +202,26 @@ class RecommendationService:
 
     def _resolve_jurisdiction(self, value: str) -> tuple[set[str], str]:
         """Resolve a code, name or region to the set of jurisdiction codes it covers."""
-        key = JURISDICTION_ALIASES.get(value.upper(), value)
-        j = (
-            self.session.query(Jurisdiction)
-            .filter(func.upper(Jurisdiction.code) == key.upper())
-            .first()
-        ) or (
-            self.session.query(Jurisdiction)
-            .filter(func.upper(Jurisdiction.name) == key.upper())
-            .first()
+        key = JURISDICTION_ALIASES.get(value.upper(), value).upper()
+        # One query for the whole (small) table: each extra round trip to a
+        # remote database adds noticeable latency, and an unknown value must
+        # return 422 quickly.
+        rows = self.session.query(Jurisdiction.code, Jurisdiction.name, Jurisdiction.region).all()
+        match = next((c for c, _, _ in rows if (c or "").upper() == key), None) or next(
+            (c for c, n, _ in rows if (n or "").upper() == key), None
         )
-        if j:
-            codes = {j.code}
-            label = j.code
+        if match:
+            codes = {match}
+            label = match
         else:
-            region = (
-                self.session.query(Jurisdiction.code)
-                .filter(func.upper(Jurisdiction.region) == key.upper())
-                .all()
-            )
-            if not region:
+            codes = {c for c, _, r in rows if (r or "").upper() == key}
+            if not codes:
                 raise RecommendationInputError(
                     f"Unknown jurisdiction '{value}'. Use an ISO code or name from "
                     "GET /api/recommend/jurisdictions.",
-                    valid_jurisdictions=sorted(c for (c,) in self.session.query(Jurisdiction.code)),
+                    valid_jurisdictions=sorted(c for c, _, _ in rows),
                 )
-            codes = {c for (c,) in region}
-            label = key.upper()
+            label = key
         if codes & EU_MEMBER_STATES:
             codes.add("EU")
         return codes, f"jurisdiction={label}"
