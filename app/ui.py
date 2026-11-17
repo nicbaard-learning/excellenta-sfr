@@ -173,7 +173,7 @@ async def framework_detail(
         return templates.TemplateResponse(
             "framework_detail.html",
             {"request": request, "fw": None, "controls": [], "versions": [],
-             "jurisdiction_codes": [], "related": [],
+             "jurisdiction_codes": [], "related": [], "requirements": [], "scf_credit": None,
              "error": "Framework not found"},
             status_code=404,
         )
@@ -198,6 +198,25 @@ async def framework_detail(
     for r in related:
         related_list.append({"id": r.id, "code": r.code, "name": r.name})
 
+    requirement_list = [
+        {
+            "ref": item["requirement"].ref,
+            "instrument": item["requirement"].instrument,
+            "kind": item["requirement"].kind,
+            "number": item["requirement"].number,
+            "title": item["requirement"].title,
+            "text": item["requirement"].text,
+            "status": item["requirement"].status,
+            "status_note": item["requirement"].status_note,
+            "version_label": item["requirement"].version_label,
+            "source_url": item["requirement"].source_url,
+            "controls": [{"id": c.id, "scf_id": c.scf_id, "title": c.title} for c in item["controls"]],
+        }
+        for item in svc.get_requirements(framework_id)
+    ]
+    # SCF mappings are shown on every framework page, so SCF's credit goes there too.
+    scf = None if fw.is_scf else svc.get_scf_framework()
+
     return templates.TemplateResponse(
         "framework_detail.html",
         {
@@ -211,11 +230,21 @@ async def framework_detail(
                 "publisher": fw.publisher,
                 "source_url": fw.source_url,
                 "is_scf": fw.is_scf,
+                "licence_name": fw.licence_name,
+                "licence_url": fw.licence_url,
+                "attribution": fw.attribution,
             },
             "controls": control_list,
             "versions": [{"id": v.id, "version_label": v.version_label} for v in versions],
             "jurisdiction_codes": [j.code for j in jurisdictions],
             "related": related_list,
+            "requirements": requirement_list,
+            "scf_credit": {
+                "name": scf.name,
+                "licence_name": scf.licence_name,
+                "licence_url": scf.licence_url,
+                "attribution": scf.attribution,
+            } if scf and (scf.attribution or scf.licence_name) else None,
         },
     )
 

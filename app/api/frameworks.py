@@ -10,6 +10,8 @@ from app.schemas.framework import (
     FrameworkDetailResponse,
     FrameworkListItem,
     FrameworkListResponse,
+    FrameworkRequirementListResponse,
+    FrameworkRequirementResponse,
     FrameworkResponse,
     FrameworkVersionResponse,
     RelatedFrameworkResponse,
@@ -81,6 +83,9 @@ def get_framework(
         publisher=fw.publisher,
         source_url=fw.source_url,
         is_scf=fw.is_scf,
+        licence_name=fw.licence_name,
+        licence_url=fw.licence_url,
+        attribution=fw.attribution,
         created_at=fw.created_at,
         updated_at=fw.updated_at,
         versions=[FrameworkVersionResponse(
@@ -116,6 +121,50 @@ def get_framework_versions(
         notes=v.notes,
         created_at=v.created_at,
     ) for v in versions]
+
+
+@router.get("/{framework_id}/requirements", response_model=FrameworkRequirementListResponse)
+def get_framework_requirements(
+    framework_id: int,
+    session: Session = Depends(get_session),
+):
+    """The framework's own provisions (e.g. POPIA sections and regulations) with their text.
+
+    `scf_controls` lists the SCF # of controls mapped to each section or
+    article. Show `attribution` and the licence wherever the text is shown.
+    """
+    svc = FrameworkService(session)
+    fw = svc.get_framework(framework_id)
+    if not fw:
+        raise HTTPException(status_code=404, detail="Framework not found")
+    items = [
+        FrameworkRequirementResponse(
+            ref=r.ref,
+            instrument=r.instrument,
+            kind=r.kind,
+            number=r.number,
+            parent_ref=r.parent_ref,
+            title=r.title,
+            text=r.text,
+            version_label=r.version_label,
+            effective_from=r.effective_from,
+            status=r.status,
+            status_note=r.status_note,
+            source_url=r.source_url,
+            scf_controls=[c.scf_id for c in item["controls"]],
+        )
+        for item in svc.get_requirements(framework_id)
+        for r in [item["requirement"]]
+    ]
+    return FrameworkRequirementListResponse(
+        framework_id=fw.id,
+        framework_code=fw.code,
+        licence_name=fw.licence_name,
+        licence_url=fw.licence_url,
+        attribution=fw.attribution,
+        items=items,
+        total=len(items),
+    )
 
 
 @router.get("/{framework_id}/related", response_model=list[RelatedFrameworkResponse])

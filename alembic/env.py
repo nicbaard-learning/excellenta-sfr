@@ -9,10 +9,12 @@ from sqlalchemy import engine_from_config, pool
 # Alembic Config object
 config = context.config
 
-# Override sqlalchemy.url from DATABASE_URL env var (used in production)
-database_url = os.environ.get("DATABASE_URL")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+# Same database as the app: DATABASE_URL env var (production) or .env (local).
+from app.config import settings  # noqa: E402
+
+database_url = os.environ.get("DATABASE_URL") or settings.database_url
+# configparser treats % as interpolation, so escape it (URL-encoded passwords).
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Set up Python logging from alembic.ini
 if config.config_file_name is not None:

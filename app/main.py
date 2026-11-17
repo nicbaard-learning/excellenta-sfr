@@ -94,8 +94,11 @@ try:
     async def lifespan(app: FastAPI):
         """Application lifespan – startup/shutdown hooks."""
         logger.info("Starting SFR – Shared Framework Repository")
-        # Create tables if they don't exist (for dev/POC convenience)
-        Base.metadata.create_all(bind=engine)
+        # Create missing tables and add missing columns (doesn't rely on the
+        # host running `alembic upgrade head` first). Fails startup if the
+        # database refuses, rather than serving errors on every framework query.
+        from app.schema_upgrade import ensure_schema
+        ensure_schema(engine)
         # Start background GitHub update checker
         task = asyncio.create_task(github_update_checker(24)) if _claim_github_check() else None
         yield

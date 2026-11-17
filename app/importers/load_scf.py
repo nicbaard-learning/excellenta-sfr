@@ -28,6 +28,7 @@ from app.importers.objectives import import_assessment_objectives
 from app.importers.sources import import_authoritative_sources
 from app.importers.threats import import_threats
 from app.importers.risks import import_risks
+from app.importers.requirements import import_requirement_files
 from app.models.import_run import ImportRun
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,13 @@ def load_workbook(filepath: str) -> None:
         sheets_processed.append("Risk Catalog")
         total_loaded += risk_count
         logger.info("  → %d risks", risk_count)
+
+        # ---- Phase 13: Framework provisions (official text, not from the workbook) ----
+        logger.info("─" * 50)
+        logger.info("Phase 13: Importing framework provisions from data/requirements...")
+        req_count = import_requirement_files(session)
+        total_loaded += req_count
+        logger.info("  → %d provisions", req_count)
 
         # ---- Finalise ----
         wb.close()

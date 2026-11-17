@@ -42,7 +42,60 @@
   <div class="stat"><div class="stat-value">{{ versions|length }}</div><div class="stat-label">Versions</div></div>
   <div class="stat"><div class="stat-value">{{ jurisdiction_codes|length }}</div><div class="stat-label">Jurisdictions</div></div>
   <div class="stat"><div class="stat-value">{{ related|length }}</div><div class="stat-label">Related Frameworks</div></div>
+  {% if requirements %}
+  <div class="stat"><div class="stat-value">{{ requirements|rejectattr("kind", "in", ["chapter", "part", "condition"])|list|length }}</div><div class="stat-label">Provisions</div></div>
+  {% endif %}
 </div>
+
+{% if requirements %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span>{{ fw.code }} text</span>
+    <span style="font-size:12px;color:var(--text-muted);">Not the official text – see source and licence below</span>
+  </div>
+  <div class="card-body">
+    {% set ns = namespace(instrument=None) %}
+    {% for r in requirements %}
+      {% if r.instrument != ns.instrument %}
+        {% set ns.instrument = r.instrument %}
+        <h2 style="font-size:16px;margin:16px 0 8px;">{{ r.instrument }}</h2>
+      {% endif %}
+      {% if r.kind in ["chapter", "part", "condition"] %}
+        <h3 style="font-size:{% if r.kind == 'chapter' %}14{% else %}13{% endif %}px;margin:14px 0 6px;">
+          {% if r.number %}{{ r.kind|capitalize }} {{ r.number }}{% if r.title %}: {% endif %}{% endif %}{{ r.title or "" }}
+        </h3>
+        {% if r.text %}<p style="font-size:13px;white-space:pre-wrap;">{{ r.text }}</p>{% endif %}
+      {% else %}
+        <details id="{{ r.ref }}" style="margin:0 0 6px 12px;">
+          <summary style="cursor:pointer;font-size:13px;">
+            {% if r.kind in ["section", "regulation", "article"] or r.number %}
+            <strong>{% if r.kind == "section" %}s{% elif r.kind == "regulation" %}r{% elif r.kind == "article" %}Art {% elif r.kind == "form" %}Form {% endif %}{{ r.number or r.ref }}</strong>
+            {% endif %}
+            {% if r.title %} {{ r.title }}{% endif %}
+            {% if r.status != "in_force" %}<span class="badge warn">{{ r.status|replace("_", " ") }}</span>{% endif %}
+            {% if r.controls %}<span class="badge primary">{{ r.controls|length }} SCF</span>{% endif %}
+          </summary>
+          <div style="margin:6px 0 10px 12px;font-size:13px;">
+            {% if r.status_note %}<p style="color:var(--text-muted);"><em>{{ r.status_note }}</em></p>{% endif %}
+            {% if r.text %}<div style="white-space:pre-wrap;">{{ r.text }}</div>{% endif %}
+            {% if r.version_label or r.source_url %}
+              <p style="color:var(--text-muted);font-size:12px;margin-top:6px;">
+                {% if r.version_label %}{{ r.version_label }}{% endif %}
+                {% if r.source_url %} · <a href="{{ r.source_url }}" target="_blank" rel="noopener">Source ↗</a>{% endif %}
+              </p>
+            {% endif %}
+            {% if r.controls %}
+              <p style="margin-top:6px;">SCF controls:
+                {% for c in r.controls %}<a href="/controls/{{ c.id }}" title="{{ c.title }}"><code>{{ c.scf_id }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}
+              </p>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 {% if related %}
 <div class="card" style="margin-bottom:16px;">
@@ -91,5 +144,31 @@
     {% endif %}
   </div>
 </div>
+
+{% if fw.attribution or fw.licence_name or scf_credit %}
+<div class="card" style="margin-top:16px;">
+  <div class="card-header">Source and licence</div>
+  <div class="card-body" style="font-size:12px;color:var(--text-muted);">
+    {% if fw.attribution or fw.licence_name %}
+      <p><strong>{{ fw.name }}</strong></p>
+      {% if fw.attribution %}<p style="white-space:pre-wrap;">{{ fw.attribution }}</p>{% endif %}
+      {% if fw.licence_name %}
+        <p>Licence:
+          {% if fw.licence_url %}<a href="{{ fw.licence_url }}" target="_blank" rel="noopener">{{ fw.licence_name }}</a>{% else %}{{ fw.licence_name }}{% endif %}
+        </p>
+      {% endif %}
+    {% endif %}
+    {% if scf_credit %}
+      <p style="margin-top:10px;"><strong>Control mappings: {{ scf_credit.name }}</strong></p>
+      {% if scf_credit.attribution %}<p style="white-space:pre-wrap;">{{ scf_credit.attribution }}</p>{% endif %}
+      {% if scf_credit.licence_name %}
+        <p>Licence:
+          {% if scf_credit.licence_url %}<a href="{{ scf_credit.licence_url }}" target="_blank" rel="noopener">{{ scf_credit.licence_name }}</a>{% else %}{{ scf_credit.licence_name }}{% endif %}
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% endif %}
 {% endblock %}

@@ -25,6 +25,13 @@ class Framework(Base):
     publisher: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_scf: Mapped[bool] = mapped_column(default=False, comment="True if this is the canonical SCF framework")
+    licence_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Licence or reuse terms of the framework text"
+    )
+    licence_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    attribution: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Credit and notices to show wherever the text is displayed"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

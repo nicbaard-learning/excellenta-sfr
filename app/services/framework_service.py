@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,26 @@ from app.models.control import Control, Domain, Principle
 from app.models.framework import Framework, FrameworkVersion
 from app.models.jurisdiction import FrameworkJurisdiction, Jurisdiction
 from app.models.mapping import ControlMapping
+from app.models.requirement import FrameworkRequirement
+
+# Provision kinds that SCF mapping references point at.
+MAPPABLE_KINDS = {"section", "article"}
+
+_PROVISION_NUMBER = re.compile(
+    r"^\s*(?:(?:sec(?:tion)?|art(?:icle)?|s)\.?\s*)?(\d+[A-Z]?)\b", re.IGNORECASE
+)
+
+
+def provision_number(mapped_ref: str | None) -> str | None:
+    """The section/article number an SCF mapping reference points at.
+
+    "19(1)(a)" -> "19", "Sec 22" -> "22", "Art. 33(1)" -> "33", "s 3A" -> "3A".
+    Returns None when the reference doesn't start with a number.
+    """
+    if not mapped_ref:
+        return None
+    m = _PROVISION_NUMBER.match(mapped_ref)
+    return m.group(1).upper() if m else None
 
 
 class FrameworkService:
@@ -33,6 +55,10 @@ class FrameworkService:
     def get_framework_by_code(self, code: str) -> Framework | None:
         """Lookup a framework by its short code."""
         return self.session.query(Framework).filter(Framework.code == code).first()
+
+    def get_scf_framework(self) -> Framework | None:
+        """The canonical SCF framework row."""
+        return self.session.query(Framework).filter(Framework.is_scf.is_(True)).first()
 
     def get_versions(self, framework_id: int) -> list[FrameworkVersion]:
         """Get all versions of a framework, newest first."""
@@ -150,6 +176,50 @@ class FrameworkService:
             .filter(FrameworkJurisdiction.framework_id == framework_id)
             .all()
         )
+
+    def get_requirements(self, framework_id: int) -> list[dict]:
+        """The framework's own provisions in display order, each with the SCF controls mapped to it.
+
+        Each item has ``requirement`` and ``controls`` (Control rows, sorted by
+        SCF #). SCF names provisions in its own style ("19(1)(a)", "Sec 22"),
+        so mappings are matched on the section/article number only; that
+        matching applies to sections and articles, not to chapters or
+        regulations.
+        """
+        requirements = (
+            self.session.query(FrameworkRequirement)
+            .filter(FrameworkRequirement.framework_id == framework_id)
+            .order_by(FrameworkRequirement.display_order, FrameworkRequirement.id)
+            .all()
+        )
+        if not requirements:
+            return []
+
+        by_number: dict[str, set[int]] = {}
+        rows = (
+            self.session.query(ControlMapping.mapped_control_id, ControlMapping.control_id)
+            .filter(ControlMapping.framework_id == framework_id)
+            .all()
+        )
+        for mapped_ref, control_id in rows:
+            number = provision_number(mapped_ref)
+            if number:
+                by_number.setdefault(number, set()).add(control_id)
+
+        wanted = set().union(*by_number.values()) if by_number else set()
+        controls = {
+            c.id: c
+            for c in self.session.query(Control).filter(Control.id.in_(wanted))
+        } if wanted else {}
+
+        result = []
+        for req in requirements:
+            ids = by_number.get(req.number.upper(), set()) if (
+                req.number and req.kind in MAPPABLE_KINDS
+            ) else set()
+            mapped = sorted((controls[i] for i in ids if i in controls), key=lambda c: c.scf_id)
+            result.append({"requirement": req, "controls": mapped})
+        return result
 
     def get_controls_for_framework(self, framework_id: int) -> list[Control]:
         """Get all controls mapped to a given framework."""

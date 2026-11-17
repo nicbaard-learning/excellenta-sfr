@@ -132,6 +132,38 @@ def resync_frameworks(
         wb.close()
 
 
+@router.post("/reload-requirements")
+def reload_requirements(
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Reload framework provisions (official text) from `data/requirements/*.json`.
+
+    Protected by `X-API-Key` header – must match `ADMIN_API_KEY`. Each file
+    replaces that framework's provisions and licence/attribution fields.
+    """
+    api_key = request.headers.get("X-API-Key", "")
+    if not api_key or not settings.admin_api_key or api_key != settings.admin_api_key:
+        return JSONResponse(status_code=403, content={"detail": "Forbidden – valid X-API-Key header required"})
+
+    from app.importers.requirements import REQUIREMENTS_DIR, import_requirement_files
+
+    if not any(REQUIREMENTS_DIR.glob("*.json")):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"No requirement files found in {REQUIREMENTS_DIR} – was data/requirements deployed?"},
+        )
+
+    try:
+        loaded = import_requirement_files(session)
+        session.commit()
+        return {"success": True, "provisions": loaded}
+    except Exception:
+        session.rollback()
+        logger.exception("Requirement reload failed")
+        return JSONResponse(status_code=500, content={"detail": "Requirement reload failed – see server logs"})
+
+
 @router.get("/update-check")
 def system_update_check(
     force: bool = False,

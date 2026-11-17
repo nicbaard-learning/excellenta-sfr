@@ -13,6 +13,36 @@ class FrameworkBase(BaseModel):
     publisher: str | None = None
     source_url: str | None = None
     is_scf: bool = False
+    licence_name: str | None = None
+    licence_url: str | None = None
+    attribution: str | None = None
+
+
+class FrameworkRequirementResponse(BaseModel):
+    """One provision of a framework, with the SCF controls mapped to it."""
+    ref: str
+    instrument: str
+    kind: str
+    number: str | None = None
+    parent_ref: str | None = None
+    title: str | None = None
+    text: str | None = None
+    version_label: str | None = None
+    effective_from: date | None = None
+    status: str = "in_force"
+    status_note: str | None = None
+    source_url: str | None = None
+    scf_controls: list[str] = []
+
+
+class FrameworkRequirementListResponse(BaseModel):
+    framework_id: int
+    framework_code: str
+    licence_name: str | None = None
+    licence_url: str | None = None
+    attribution: str | None = None
+    items: list[FrameworkRequirementResponse]
+    total: int
 
 
 class FrameworkResponse(FrameworkBase):
