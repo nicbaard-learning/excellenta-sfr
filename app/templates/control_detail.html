@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{% if control %}{{ control.scf_id }} — {{ control.title[:60] }}{% else %}Not Found{% endif %}{% endblock %}
+{% block title %}{% if control %}{{ control.scf_id }} — {{ control.title }}{% else %}Not Found{% endif %}{% endblock %}
 {% block content %}
 
 {% if error %}
@@ -185,7 +185,7 @@
       {% for label, value in cmm_levels %}
       <div class="maturity-item {% if value %}has-data{% else %}no-data{% endif %}">
         <div class="maturity-label">{{ label }}</div>
-        <div class="maturity-value">{% if value %}{{ value[:200] }}{% if value|length > 200 %}…{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</div>
+        <div class="maturity-value">{% if value %}{{ value }}{% else %}<span class="text-muted">—</span>{% endif %}</div>
       </div>
       {% endfor %}
     </div>
@@ -209,7 +209,7 @@
       {% for label, value in firm_sizes %}
       <div class="firm-size-item {% if value %}has-data{% else %}no-data{% endif %}">
         <div class="firm-size-label">{{ label }}</div>
-        <div class="firm-size-value">{% if value %}{{ value[:200] }}{% if value|length > 200 %}…{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</div>
+        <div class="firm-size-value">{% if value %}{{ value }}{% else %}<span class="text-muted">—</span>{% endif %}</div>
       </div>
       {% endfor %}
     </div>

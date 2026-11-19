@@ -406,7 +406,7 @@ class RecommendationService:
             result.setdefault(fid, []).append({
                 "scf_id": c.scf_id,
                 "title": c.title,
-                "description": c.description[:300] if c.description else None,
+                "description": c.description,
                 "domain_code": c.domain.code if c.domain else None,
                 "relative_weighting": float(c.relative_weighting) if c.relative_weighting else None,
                 "cmm_level_0": c.cmm_level_0,

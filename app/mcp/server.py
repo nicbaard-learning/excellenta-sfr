@@ -12,6 +12,7 @@ Run locally:
         uvicorn app.main:app --reload                       # SSE at http://localhost:8000/mcp
 """
 
+import functools
 import logging
 import sys
 
@@ -21,6 +22,7 @@ from mcp.server.sse import TransportSecuritySettings
 from app.config import settings
 from app.database import SessionLocal
 from app.mcp.resolver import resolve_framework_id, resolve_frameworks
+from app.scf_license_middleware import license_block
 from app.services.comparison_service import ComparisonService
 from app.services.control_service import ControlService
 from app.services.framework_service import FrameworkService
@@ -51,6 +53,19 @@ mcp = FastMCP(
 
 
 # ── Helper ────────────────────────────────────────────────────────────
+def _with_license(fn):
+    """Add the SCF licence credit to a tool's dict result (other fields untouched)."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        result = fn(*args, **kwargs)
+        if isinstance(result, dict) and "license" not in result:
+            result = {**result, "license": license_block()}
+        return result
+
+    return wrapper
+
+
 def _get_session():
     """Create and return a new database session."""
     return SessionLocal()
@@ -86,6 +101,7 @@ def _get_session():
         "5. `max_controls` (default 5) sets how many sample controls come back per framework."
     ),
 )
+@_with_license
 def get_applicable_frameworks(
     category: str | None = None,
     business_model: str | None = None,
@@ -162,6 +178,7 @@ def get_applicable_frameworks(
         "Returns description, publisher, versions, jurisdictions, and related frameworks."
     ),
 )
+@_with_license
 def get_framework_details(
     framework_id: int | None = None,
     framework_name: str | None = None,
@@ -248,6 +265,7 @@ def get_framework_details(
         "use the `domain` parameter with a domain code like 'IR', 'AC', 'AU', etc."
     ),
 )
+@_with_license
 def get_framework_controls(
     framework_id: int | None = None,
     framework_name: str | None = None,
@@ -307,8 +325,8 @@ def get_framework_controls(
                     "id": c.id,
                     "scf_id": c.scf_id,
                     "title": c.title,
-                    "description": c.description[:500] if c.description else None,
-                    "control_question": c.control_question[:300] if c.control_question else None,
+                    "description": c.description,
+                    "control_question": c.control_question,
                     "domain_code": c.domain.code if c.domain else None,
                     "domain_name": c.domain.name if c.domain else None,
                     "principle_code": c.principle.code if c.principle else None,
@@ -342,6 +360,7 @@ def get_framework_controls(
         "You can also first call get_framework_controls with a domain filter, then compare."
     ),
 )
+@_with_license
 def compare_frameworks(
     framework_ids: list[int] | None = None,
     framework_names: list[str] | None = None,
@@ -393,8 +412,8 @@ def compare_frameworks(
                     "id": c.id,
                     "scf_id": c.scf_id,
                     "title": c.title,
-                    "description": c.description[:300] if c.description else None,
-                    "control_question": c.control_question[:200] if c.control_question else None,
+                    "description": c.description,
+                    "control_question": c.control_question,
                     "domain_code": c.domain.code if c.domain else None,
                     "principle_code": c.principle.code if c.principle else None,
                 }
@@ -409,7 +428,7 @@ def compare_frameworks(
                     "id": c.id,
                     "scf_id": c.scf_id,
                     "title": c.title,
-                    "description": c.description[:300] if c.description else None,
+                    "description": c.description,
                     "domain_code": c.domain.code if c.domain else None,
                 }
                 for c in result["in_base_not_compare"]
@@ -419,7 +438,7 @@ def compare_frameworks(
                     "id": c.id,
                     "scf_id": c.scf_id,
                     "title": c.title,
-                    "description": c.description[:300] if c.description else None,
+                    "description": c.description,
                     "domain_code": c.domain.code if c.domain else None,
                 }
                 for c in result["in_compare_not_base"]
@@ -434,7 +453,7 @@ def compare_frameworks(
                     "id": ctrl.id,
                     "scf_id": ctrl.scf_id,
                     "title": ctrl.title,
-                    "description": ctrl.description[:300] if ctrl.description else None,
+                    "description": ctrl.description,
                     "domain_code": ctrl.domain.code if ctrl.domain else None,
                 }
             return result
@@ -459,6 +478,7 @@ def compare_frameworks(
         "an audit readiness score, and evidence grouped by audit effort (low/medium/high)."
     ),
 )
+@_with_license
 def generate_evidence_checklist(
     framework_id: int | None = None,
     framework_name: str | None = None,
@@ -510,6 +530,7 @@ def generate_evidence_checklist(
         "and a suggested implementation order."
     ),
 )
+@_with_license
 def translate_framework(
     source_framework_id: int | None = None,
     source_framework_name: str | None = None,
@@ -557,6 +578,7 @@ def translate_framework(
         "Use this to answer questions like 'What is the NIST equivalent of AC-01-01?' "
     ),
 )
+@_with_license
 def find_control_equivalents(
     scf_id: str | None = None,
     control_id: int | None = None,
@@ -594,6 +616,7 @@ def find_control_equivalents(
         "When used without assessed_levels, returns the theoretical SCR-CMM framework."
     ),
 )
+@_with_license
 def assess_maturity(
     framework_id: int | None = None,
     framework_name: str | None = None,
@@ -638,6 +661,7 @@ def assess_maturity(
         "'Give me a compliance roadmap for a small business implementing NIST CSF.'"
     ),
 )
+@_with_license
 def generate_roadmap(
     framework_id: int | None = None,
     framework_name: str | None = None,
@@ -714,6 +738,7 @@ def generate_roadmap(
         "- 'third party risk' — maps to Governance risks"
     ),
 )
+@_with_license
 def map_risks_to_controls(
     risk_id: int | None = None,
     risk_keyword: str | None = None,
@@ -750,6 +775,7 @@ def map_risks_to_controls(
         "'Show me a risk heat map for our compliance program.'"
     ),
 )
+@_with_license
 def generate_risk_heat_map(
     risk_grouping: str | None = None,
 ) -> dict:
@@ -785,6 +811,7 @@ def generate_risk_heat_map(
         "Use this to prepare for an upcoming compliance audit or assessment."
     ),
 )
+@_with_license
 def audit_readiness_report(
     framework_id: int | None = None,
     framework_name: str | None = None,

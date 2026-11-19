@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import scf_attribution
 from app.database import get_session
 from app.services.roadmap_service import RoadmapService
 
@@ -45,7 +46,7 @@ async def print_roadmap(
     )
     return templates.TemplateResponse(
         "roadmap_print.html",
-        {"request": request, "data": data},
+        {"request": request, "data": data, "scf_attribution": scf_attribution.ATTRIBUTION},
     )
 
 

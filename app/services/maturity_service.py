@@ -219,7 +219,7 @@ class MaturityService:
         for i, col in enumerate(SCR_CMM_COLUMNS):
             val = getattr(ctrl, col, None)
             if val:
-                profile[f"level_{i}"] = val[:200] if val else None
+                profile[f"level_{i}"] = val if val else None
             else:
                 profile[f"level_{i}"] = None
         return profile

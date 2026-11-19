@@ -312,7 +312,7 @@ class TranslationService:
             result.append({
                 "scf_id": ctrl.scf_id,
                 "title": ctrl.title,
-                "description": ctrl.description[:300] if ctrl.description else None,
+                "description": ctrl.description,
                 "domain_code": ctrl.domain.code if ctrl.domain else None,
                 "mapped_control_id": mapping.mapped_control_id if mapping else None,
                 "relative_weighting": float(ctrl.relative_weighting) if ctrl.relative_weighting else None,

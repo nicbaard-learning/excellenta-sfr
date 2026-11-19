@@ -471,7 +471,7 @@ class RiskIntelligenceService:
             {
                 "scf_id": c.scf_id,
                 "title": c.title,
-                "description": c.description[:200] if c.description else None,
+                "description": c.description,
                 "domain_code": c.domain.code if c.domain else None,
                 "mitigation_level": self._estimate_mitigation_level(c),
             }

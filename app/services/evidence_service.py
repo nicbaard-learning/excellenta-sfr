@@ -184,8 +184,8 @@ class EvidenceIntelligenceService:
                     "scf_id": ctrl.scf_id,
                     "title": ctrl.title,
                     "domain_code": ctrl.domain.code if ctrl.domain else None,
-                    "description": ctrl.description[:200] if ctrl.description else None,
-                    "assessment_objectives": objectives_text[:3],
+                    "description": ctrl.description,
+                    "assessment_objectives": objectives_text,
                     "suggested_evidence_types": self._suggest_evidence_types(ctrl),
                 })
 
@@ -583,7 +583,7 @@ class EvidenceIntelligenceService:
                 guidance.append({
                     "scf_id": ctrl.scf_id,
                     "title": ctrl.title,
-                    "guidance": solution[:300] if solution else None,
+                    "guidance": solution,
                     "domain_code": ctrl.domain.code if ctrl.domain else None,
                 })
 

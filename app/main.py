@@ -148,6 +148,10 @@ try:
 
     app.add_middleware(ForceConnectionClose)
 
+    from app.scf_license_middleware import SCFLicenseMiddleware
+
+    app.add_middleware(SCFLicenseMiddleware)
+
     # ── Static files ──────────────────────────────────────────────────────
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

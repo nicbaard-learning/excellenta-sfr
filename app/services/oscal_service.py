@@ -24,6 +24,7 @@ from app.models.control import Control, Domain
 from app.models.evidence import EvidenceArtifact
 from app.models.framework import Framework
 from app.models.mapping import ControlMapping
+from app.scf_attribution import oscal_licence_link, oscal_remarks
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,8 @@ class OscalService:
                         {"name": "catalog-type", "value": "scf-control-catalog"},
                         {"name": "total-domains", "value": str(len(groups))},
                     ],
+                    "links": [oscal_licence_link()],
+                    "remarks": oscal_remarks(),
                 },
                 "groups": groups,
                 "back-matter": {
@@ -272,6 +275,8 @@ class OscalService:
                         {"name": "is-scf", "value": str(fw.is_scf or False).lower()},
                         {"name": "total-controls", "value": str(len(controls))},
                     ],
+                    "links": [oscal_licence_link()],
+                    "remarks": oscal_remarks(),
                 },
                 "imports": [
                     {
@@ -414,6 +419,8 @@ class OscalService:
                         {"name": "total-controls", "value": str(len(controls))},
                         {"name": "total-assessed", "value": str(len(observations))},
                     ],
+                    "links": [oscal_licence_link()],
+                    "remarks": oscal_remarks(),
                 },
                 "results": [
                     {
@@ -469,7 +476,7 @@ class OscalService:
             oscal_ctrl["parts"].append({
                 "id": f"{ctrl.scf_id}_desc",
                 "name": "description",
-                "prose": ctrl.description[:2000],
+                "prose": ctrl.description,
             })
 
         # Add control question
@@ -477,7 +484,7 @@ class OscalService:
             oscal_ctrl["parts"].append({
                 "id": f"{ctrl.scf_id}_question",
                 "name": "question",
-                "prose": ctrl.control_question[:2000],
+                "prose": ctrl.control_question,
             })
 
         # Add assessment objectives as parts (use pre-loaded if provided)

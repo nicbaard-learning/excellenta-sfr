@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app import scf_attribution
 from app.database import get_session
 from app.services.comparison_service import ComparisonService
 from app.services.control_service import ControlService
@@ -130,7 +131,13 @@ async def about(
 
     return templates.TemplateResponse(
         "about.html",
-        {"request": request, "stats": stats},
+        {
+            "request": request,
+            "stats": stats,
+            "scf_licence_name": scf_attribution.LICENCE_NAME,
+            "scf_licence_url": scf_attribution.LICENCE_URL,
+            "scf_no_changes": scf_attribution.NO_CHANGES,
+        },
     )
 
 

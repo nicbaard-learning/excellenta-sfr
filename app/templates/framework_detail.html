@@ -131,7 +131,7 @@
         {% for c in controls %}
         <tr>
           <td class="scf-id"><a href="/controls/{{ c.id }}">{{ c.scf_id }}</a></td>
-          <td><a href="/controls/{{ c.id }}">{{ c.title[:100] }}{% if c.title|length > 100 %}…{% endif %}</a></td>
+          <td><a href="/controls/{{ c.id }}">{{ c.title }}</a></td>
           <td>{% if c.domain_code %}{{ c.domain_code }}{% else %}—{% endif %}</td>
           <td>{% if c.relative_weighting %}{{ "%.1f"|format(c.relative_weighting) }}{% else %}—{% endif %}</td>
           <td><a href="/controls/{{ c.id }}">Detail →</a></td>
