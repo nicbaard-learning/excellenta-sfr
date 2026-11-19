@@ -35,6 +35,51 @@ def provision_number(mapped_ref: str | None) -> str | None:
     return m.group(1).upper() if m else None
 
 
+_PROVISION_QUERY = re.compile(
+    r"^(?:(section|sec|s|article|art|regulation|reg|r)\.?\s*)?(\d+[A-Z]?)\b", re.IGNORECASE
+)
+_QUERY_KINDS = {
+    "section": {"section"}, "sec": {"section"}, "s": {"section"},
+    "article": {"article"}, "art": {"article"},
+    "regulation": {"regulation"}, "reg": {"regulation"}, "r": {"regulation"},
+}
+
+
+def match_provisions(requirements: list, query: str) -> list:
+    """The provisions a user's reference points at, each followed by everything nested under it.
+
+    ``requirements`` are FrameworkRequirement rows (or items with the same
+    attributes) in display order. ``query`` may be an exact ref ("s22",
+    "r4", "ch3", "form2") or a number with an optional kind ("22",
+    "section 22(1)", "reg 4", "Art. 33"). A bare number matches sections
+    and articles. Returns [] when nothing matches.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    key = re.sub(r"\s+", "", q).lower()
+    hits = [r for r in requirements if r.ref.lower() == key]
+    if not hits:
+        m = _PROVISION_QUERY.match(q)
+        if m:
+            kinds = _QUERY_KINDS.get((m.group(1) or "").lower(), MAPPABLE_KINDS)
+            number = m.group(2).upper()
+            hits = [r for r in requirements if r.kind in kinds and (r.number or "").upper() == number]
+    if not hits:
+        return []
+
+    # Add descendants (chapter -> parts -> sections) in display order.
+    wanted = {r.ref for r in hits}
+    grew = True
+    while grew:
+        grew = False
+        for r in requirements:
+            if r.parent_ref in wanted and r.ref not in wanted:
+                wanted.add(r.ref)
+                grew = True
+    return [r for r in requirements if r.ref in wanted]
+
+
 class FrameworkService:
     """Service layer for framework-related operations."""
 

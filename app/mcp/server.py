@@ -25,7 +25,7 @@ from app.mcp.resolver import resolve_framework_id, resolve_frameworks
 from app.scf_license_middleware import license_block
 from app.services.comparison_service import ComparisonService
 from app.services.control_service import ControlService
-from app.services.framework_service import FrameworkService
+from app.services.framework_service import FrameworkService, match_provisions
 from app.services.recommendation_service import RecommendationInputError, RecommendationService
 from app.services.evidence_service import EvidenceIntelligenceService
 from app.services.translation_service import TranslationService
@@ -336,6 +336,118 @@ def get_framework_controls(
         }
     except Exception as exc:
         logger.exception("get_framework_controls failed")
+        return {"error": str(exc)}
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool 3b: get_framework_text
+# ═══════════════════════════════════════════════════════════════════════
+@mcp.tool(
+    name="get_framework_text",
+    description=(
+        "Get the official text of a law or standard's own provisions (sections, "
+        "regulations, articles), e.g. POPIA section 19 or POPIA regulation 4. "
+        "Provide framework_id or framework_name (e.g. 'POPIA', 'EMEA-ZA').\n"
+        "- With `ref`, returns that provision's full text plus anything nested under it. "
+        "`ref` accepts 's22', 'section 22', '22(1)', 'r4', 'reg 4', 'ch3', 'cond7', 'form2'. "
+        "A bare number matches a section or article; use 'reg 4' for regulations.\n"
+        "- Without `ref`, returns the table of contents (ref, kind, number, title, status) "
+        "without text; set include_text=true to get every provision's text (large).\n"
+        "Each provision lists `scf_controls` (SCF # of mapped SCF controls) and its status "
+        "(in_force, not_in_force, repealed...). The provision text is credited by "
+        "`attribution` / `licence_name` / `licence_url`; `license` covers SCF content. "
+        "Show the attribution wherever you show the text. Frameworks without loaded text "
+        "return an empty `provisions` list."
+    ),
+)
+@_with_license
+def get_framework_text(
+    framework_id: int | None = None,
+    framework_name: str | None = None,
+    ref: str | None = None,
+    include_text: bool = False,
+) -> dict:
+    """Official provision text for a framework.
+
+    Args:
+        framework_id: Internal numeric framework ID.
+        framework_name: Framework name or code (e.g. "POPIA", "EMEA-ZA").
+        ref: Provision to return (e.g. "s22", "section 22", "reg 4", "ch3").
+        include_text: Without `ref`, also return every provision's text.
+
+    Returns:
+        Dict with framework info, licence/attribution and "provisions".
+    """
+    if not framework_id and not framework_name:
+        return {"error": "Provide either framework_id or framework_name."}
+
+    session = _get_session()
+    try:
+        resolved_id = resolve_framework_id(session, framework_name=framework_name, framework_id=framework_id)
+        if resolved_id is None:
+            return {"error": f"Framework not found: '{framework_name or framework_id}'"}
+
+        fw_svc = FrameworkService(session)
+        fw = fw_svc.get_framework(resolved_id)
+        if not fw:
+            return {"error": f"Framework with id {resolved_id} not found in database."}
+
+        items = fw_svc.get_requirements(resolved_id)
+        controls_by_ref = {i["requirement"].ref: [c.scf_id for c in i["controls"]] for i in items}
+        requirements = [i["requirement"] for i in items]
+
+        result = {
+            "framework_id": fw.id,
+            "framework_code": fw.code,
+            "framework_name": fw.name,
+            "licence_name": fw.licence_name,
+            "licence_url": fw.licence_url,
+            "attribution": fw.attribution,
+            "total_provisions": len(requirements),
+            "ref": ref,
+        }
+        if not requirements:
+            return {**result, "provisions": [], "note": f"No provision text loaded for {fw.code} yet."}
+
+        if ref:
+            selected = match_provisions(requirements, ref)
+            if not selected:
+                return {
+                    **result,
+                    "provisions": [],
+                    "error": f"No provision matches '{ref}'. Call without ref for the table of contents.",
+                }
+            with_text = True
+        else:
+            selected = requirements
+            with_text = include_text
+
+        provisions = []
+        for r in selected:
+            p = {
+                "ref": r.ref,
+                "instrument": r.instrument,
+                "kind": r.kind,
+                "number": r.number,
+                "parent_ref": r.parent_ref,
+                "title": r.title,
+                "status": r.status,
+            }
+            if with_text:
+                p.update(
+                    text=r.text,
+                    status_note=r.status_note,
+                    version_label=r.version_label,
+                    effective_from=r.effective_from.isoformat() if r.effective_from else None,
+                    source_url=r.source_url,
+                    scf_controls=controls_by_ref.get(r.ref, []),
+                )
+            provisions.append(p)
+        return {**result, "returned": len(provisions), "provisions": provisions}
+    except Exception as exc:
+        logger.exception("get_framework_text failed")
         return {"error": str(exc)}
     finally:
         session.close()
