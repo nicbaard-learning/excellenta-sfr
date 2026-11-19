@@ -23,8 +23,19 @@ class ControlService:
         return self.session.query(Control).filter(Control.id == control_id).first()
 
     def get_control_by_scf_id(self, scf_id: str) -> Control | None:
-        """Lookup a control by its SCF # identifier."""
-        return self.session.query(Control).filter(Control.scf_id == scf_id).first()
+        """Lookup a control by its SCF # identifier.
+
+        Falls back to an earlier SCF # (Legacy SCF #) when no current control
+        has that number. A number SCF has reused for another control always
+        finds the current one.
+        """
+        ctrl = self.session.query(Control).filter(Control.scf_id == scf_id).first()
+        if ctrl is not None or not scf_id:
+            return ctrl
+        for candidate in self.session.query(Control).filter(Control.legacy_scf_ids.contains(scf_id)):
+            if scf_id in [s.strip() for s in (candidate.legacy_scf_ids or "").split(",")]:
+                return candidate
+        return None
 
     def get_mappings(self, control_id: int) -> list[dict]:
         """Get all framework mappings for a control, with framework details."""

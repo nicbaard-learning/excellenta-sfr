@@ -24,6 +24,9 @@ class Framework(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     publisher: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    fdi: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="SCF Focal Document Identifier; keeps the code stable across SCF releases"
+    )
     is_scf: Mapped[bool] = mapped_column(default=False, comment="True if this is the canonical SCF framework")
     licence_name: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="Licence or reuse terms of the framework text"

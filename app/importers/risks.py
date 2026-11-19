@@ -34,7 +34,7 @@ def _find_risk_headers(df: pd.DataFrame) -> dict[str, str]:
             col_map[_COL_GROUPING] = col
         elif s in ("risk #", "risk # ", "risk number"):
             col_map[_COL_NUMBER] = col
-        elif s in ("risk*", "risk", "risk title"):
+        elif s in ("risk*", "risk", "risk title") or s.startswith("risk*"):
             col_map[_COL_TITLE] = col
         elif "description of possible risk" in s or "control deficiency" in s:
             col_map[_COL_DESCRIPTION] = col
@@ -89,24 +89,32 @@ def import_risks(session, wb) -> int:
 
     count = 0
     sheet_name = sheet.title
+    existing = {r.risk_number: r for r in session.query(Risk).all()}
+    seen: set[str] = set()
 
     for idx, row in df_data.iterrows():
         risk_number = safe_str(row.get(col_map.get(_COL_NUMBER)))
-        if not risk_number:
+        if not risk_number or risk_number in seen:
             continue
+        seen.add(risk_number)
 
-        risk = Risk(
-            risk_number=risk_number,
-            risk_grouping=safe_str(row.get(col_map.get(_COL_GROUPING))) if _COL_GROUPING in col_map else None,
-            risk_title=safe_str(row.get(col_map.get(_COL_TITLE))) if _COL_TITLE in col_map else None,
-            risk_description=safe_str(row.get(col_map.get(_COL_DESCRIPTION))) if _COL_DESCRIPTION in col_map else None,
-            nist_csf_function=safe_str(row.get(col_map.get(_COL_NIST_CSF))) if _COL_NIST_CSF in col_map else None,
-            materiality_considerations=safe_str(row.get(col_map.get(_COL_MATERIALITY))) if _COL_MATERIALITY in col_map else None,
-            source_sheet=sheet_name,
-            source_row=int(idx) + header_row_idx + 2,
-        )
-        session.add(risk)
+        risk = existing.get(risk_number)
+        if risk is None:
+            risk = Risk(risk_number=risk_number)
+            session.add(risk)
+        risk.risk_grouping = safe_str(row.get(col_map.get(_COL_GROUPING))) if _COL_GROUPING in col_map else None
+        risk.risk_title = safe_str(row.get(col_map.get(_COL_TITLE))) if _COL_TITLE in col_map else None
+        risk.risk_description = safe_str(row.get(col_map.get(_COL_DESCRIPTION))) if _COL_DESCRIPTION in col_map else None
+        risk.nist_csf_function = safe_str(row.get(col_map.get(_COL_NIST_CSF))) if _COL_NIST_CSF in col_map else None
+        risk.materiality_considerations = safe_str(row.get(col_map.get(_COL_MATERIALITY))) if _COL_MATERIALITY in col_map else None
+        risk.source_sheet = sheet_name
+        risk.source_row = int(idx) + header_row_idx + 2
         count += 1
+
+    # Risks the workbook no longer lists (and duplicates from earlier runs)
+    for r in session.query(Risk).all():
+        if r.risk_number not in seen or existing.get(r.risk_number) not in (r, None):
+            session.delete(r)
 
     session.flush()
     logger.info("Imported %d risks", count)

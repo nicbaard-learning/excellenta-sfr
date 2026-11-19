@@ -113,14 +113,17 @@ class OscalService:
             if oc:
                 top_controls.append(oc)
 
+        from app.importers.frameworks import current_scf_version
+
+        scf_version = current_scf_version(self.session) or "unknown"
         catalog: dict[str, Any] = {
             "catalog": {
                 "uuid": catalog_uuid,
                 "metadata": {
-                    "title": "Secure Controls Framework (SCF) 2026.1",
+                    "title": f"Secure Controls Framework (SCF) {scf_version}",
                     "published": now,
                     "last-modified": now,
-                    "version": "2026.1",
+                    "version": scf_version,
                     "oscal-version": "1.1.2",
                     "parties": [
                         {
@@ -141,7 +144,7 @@ class OscalService:
                     "resources": [
                         {
                             "uuid": str(uuid.uuid4()),
-                            "title": "Secure Controls Framework (SCF) 2026.1",
+                            "title": f"Secure Controls Framework (SCF) {scf_version}",
                             "description": (
                                 "The SCF is a comprehensive controls framework "
                                 "that maps to multiple regulatory and industry standards."

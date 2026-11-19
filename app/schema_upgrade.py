@@ -22,11 +22,13 @@ from app.database import Base
 logger = logging.getLogger(__name__)
 
 # Columns added to existing tables after they were first created.
-# (table, column, SQL type) – migration 0004.
+# (table, column, SQL type) – migrations 0004 and 0005.
 NEW_COLUMNS: list[tuple[str, str, str]] = [
     ("frameworks", "licence_name", "VARCHAR(255)"),
     ("frameworks", "licence_url", "VARCHAR(500)"),
     ("frameworks", "attribution", "TEXT"),
+    ("frameworks", "fdi", "VARCHAR(255)"),
+    ("controls", "legacy_scf_ids", "TEXT"),
 ]
 
 

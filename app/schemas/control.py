@@ -28,6 +28,8 @@ class ControlBase(BaseModel):
     cmm_level_3: str | None = None
     cmm_level_4: str | None = None
     cmm_level_5: str | None = None
+    # Earlier SCF #s of this control, comma-separated
+    legacy_scf_ids: str | None = None
 
 
 class ControlResponse(ControlBase):

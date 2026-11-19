@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # ── Import ────────────────────────────────────────────────────────
-    default_workbook: str = "secure-controls-framework-scf-2026-1.xlsx"
+    default_workbook: str = "secure-controls-framework-scf-2026-3.xlsx"
     import_batch_size: int = 500
 
     # ── Admin ──────────────────────────────────────────────────────────

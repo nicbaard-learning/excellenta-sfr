@@ -87,23 +87,31 @@ def import_threats(session, wb) -> int:
 
     count = 0
     sheet_name = sheet.title
+    existing = {t.threat_number: t for t in session.query(Threat).all()}
+    seen: set[str] = set()
 
     for idx, row in df_data.iterrows():
         threat_number = safe_str(row.get(col_map.get(_COL_NUMBER)))
-        if not threat_number:
+        if not threat_number or threat_number in seen:
             continue
+        seen.add(threat_number)
 
-        threat = Threat(
-            threat_number=threat_number,
-            threat_grouping=safe_str(row.get(col_map.get(_COL_GROUPING))) if _COL_GROUPING in col_map else None,
-            threat_title=safe_str(row.get(col_map.get(_COL_TITLE))) if _COL_TITLE in col_map else None,
-            threat_description=safe_str(row.get(col_map.get(_COL_DESCRIPTION))) if _COL_DESCRIPTION in col_map else None,
-            materiality_considerations=safe_str(row.get(col_map.get(_COL_MATERIALITY))) if _COL_MATERIALITY in col_map else None,
-            source_sheet=sheet_name,
-            source_row=int(idx) + header_row_idx + 2,
-        )
-        session.add(threat)
+        threat = existing.get(threat_number)
+        if threat is None:
+            threat = Threat(threat_number=threat_number)
+            session.add(threat)
+        threat.threat_grouping = safe_str(row.get(col_map.get(_COL_GROUPING))) if _COL_GROUPING in col_map else None
+        threat.threat_title = safe_str(row.get(col_map.get(_COL_TITLE))) if _COL_TITLE in col_map else None
+        threat.threat_description = safe_str(row.get(col_map.get(_COL_DESCRIPTION))) if _COL_DESCRIPTION in col_map else None
+        threat.materiality_considerations = safe_str(row.get(col_map.get(_COL_MATERIALITY))) if _COL_MATERIALITY in col_map else None
+        threat.source_sheet = sheet_name
+        threat.source_row = int(idx) + header_row_idx + 2
         count += 1
+
+    # Threats the workbook no longer lists (and duplicates from earlier runs)
+    for t in session.query(Threat).all():
+        if t.threat_number not in seen or existing.get(t.threat_number) not in (t, None):
+            session.delete(t)
 
     session.flush()
     logger.info("Imported %d threats", count)

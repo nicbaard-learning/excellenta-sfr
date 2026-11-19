@@ -145,12 +145,17 @@ def test_reload_fails_loudly_when_data_folder_missing(monkeypatch, tmp_path):
 def test_schema_upgrade_postgres_statements_only_for_missing_columns():
     from app.schema_upgrade import add_column_statements
 
-    statements = add_column_statements("postgresql", {"frameworks": {"licence_name"}})
+    statements = add_column_statements(
+        "postgresql", {"frameworks": {"licence_name", "fdi"}, "controls": {"legacy_scf_ids"}}
+    )
     assert statements == [
         "ALTER TABLE frameworks ADD COLUMN IF NOT EXISTS licence_url VARCHAR(500)",
         "ALTER TABLE frameworks ADD COLUMN IF NOT EXISTS attribution TEXT",
     ]
-    all_present = {"frameworks": {"licence_name", "licence_url", "attribution"}}
+    all_present = {
+        "frameworks": {"licence_name", "licence_url", "attribution", "fdi"},
+        "controls": {"legacy_scf_ids"},
+    }
     assert add_column_statements("postgresql", all_present) == []
 
 

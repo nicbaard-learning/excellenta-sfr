@@ -4,87 +4,67 @@ from __future__ import annotations
 
 import logging
 
-import pandas as pd
-
-from app.importers.base import find_sheet, load_sheet_dataframe, safe_str
+from app.importers.base import safe_str
+from app.importers.workbook import norm_header, versioned_sheet_name
 from app.models.assessment import AssessmentObjective
 from app.models.control import Control
 
 logger = logging.getLogger(__name__)
 
 
+def _column_index(header: list) -> dict[str, int]:
+    """Find the control #, AO # and AO text columns.
+
+    "Legacy SCF #" and "... (AO) Origin(s)" look alike but must be skipped.
+    """
+    cols: dict[str, int] = {}
+    for i, h in enumerate(header):
+        s = norm_header(h)
+        if s in ("scf #", "scf control #") and "control_ref" not in cols:
+            cols["control_ref"] = i
+        elif s in ("scf ao #", "ao #") and "code" not in cols:
+            cols["code"] = i
+        elif s.startswith("scf assessment objective (ao)") and "origin" not in s and "text" not in cols:
+            cols["text"] = i
+    return cols
+
+
 def import_assessment_objectives(session, wb) -> int:
-    """Load assessment objectives from the 'Assessment Objectives 2026.1' sheet."""
-    df = load_sheet_dataframe(wb, "Assessment Objectives 2026.1")
-    if df is None:
-        sheet = find_sheet(wb, "Assessment Objectives")
-        if sheet is None:
-            logger.warning("Assessment Objectives sheet not found – skipping")
-            return 0
-        df = pd.read_excel(wb, sheet_name=sheet.title, engine="openpyxl")
+    """Replace all assessment objectives with those in the workbook."""
+    sheet = versioned_sheet_name(wb, "Assessment Objectives")
+    if sheet is None:
+        logger.warning("Assessment Objectives sheet not found – skipping")
+        return 0
+
+    rows = wb[sheet].iter_rows(values_only=True)
+    cols = _column_index(list(next(rows)))
+    if "control_ref" not in cols or "text" not in cols:
+        raise ValueError(f"{sheet!r} lacks the SCF # or Assessment Objective column")
 
     control_map = {c.scf_id: c.id for c in session.query(Control).all()}
-    col_map = _map_columns(df)
+    session.query(AssessmentObjective).delete(synchronize_session="evaluate")
 
     count = 0
-    sheet_name = getattr(df, "sheet_name", "Assessment Objectives")
+    for n, row in enumerate(rows, start=2):
+        def cell(key: str):
+            i = cols.get(key)
+            return row[i] if i is not None and i < len(row) else None
 
-    for idx, row in df.iterrows():
-        control_ref = safe_str(row.get(col_map.get("control_ref"))) if col_map.get("control_ref") else None
-        control_id = control_map.get(control_ref) if control_ref else None
-        if not control_id:
+        control_id = control_map.get(safe_str(cell("control_ref")) or "")
+        text = safe_str(cell("text"))
+        if not control_id or not text:
             continue
-
-        objective_code = safe_str(row.get(col_map.get("code"))) if col_map.get("code") else None
-        objective_text = safe_str(row.get(col_map.get("text"))) if col_map.get("text") else safe_str(_fallback_text(row))
-
-        if not objective_text:
-            continue
-
-        objective = AssessmentObjective(
+        session.add(AssessmentObjective(
             control_id=control_id,
-            objective_code=objective_code,
-            objective_text=objective_text,
-            source_sheet=sheet_name,
-            source_row=int(idx) + 2,
-        )
-        session.add(objective)
+            objective_code=safe_str(cell("code")),
+            objective_text=text,
+            source_sheet=sheet,
+            source_row=n,
+        ))
         count += 1
+        if count % 1000 == 0:
+            session.flush()
 
     session.flush()
     logger.info("Imported %d assessment objectives", count)
     return count
-
-
-def _map_columns(df: pd.DataFrame) -> dict[str, str]:
-    """Map column headers to standardized keys.
-
-    The Assessment Objectives 2026.1 sheet has these relevant columns:
-        'SCF #'                                      -> control_ref
-        'SCF AO #'                                   -> code
-        'SCF Assessment Objective (AO)\n...'          -> text  (the real objective)
-        'SCF Assessment Objective (AO) Origin(s)'    -> SKIP  (metadata, not actual text)
-    """
-    col_map: dict[str, str] = {}
-    for col in df.columns:
-        if col is None or pd.isna(col):
-            continue
-        s = str(col).strip().lower()
-        if any(x in s for x in ("control #", "scf #", "control ref", "scf number", "scf_id")):
-            col_map["control_ref"] = col
-        elif any(x in s for x in ("objective #", "objective code", "obj #", "obj code",
-                                   "reference", "ao #", "ao number")):
-            col_map["code"] = col
-        elif any(x in s for x in ("objective", "assessment objective", "objective text", "description")):
-            # Skip columns that contain 'origin' – they're metadata, not the actual text
-            if "origin" not in s:
-                col_map["text"] = col
-    return col_map
-
-
-def _fallback_text(row) -> str | None:
-    """Fallback: use any non-null string column as the objective text."""
-    for val in row:
-        if val and not pd.isna(val) and isinstance(val, str) and len(val) > 10:
-            return val
-    return None

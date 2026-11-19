@@ -128,6 +128,9 @@ class Control(Base):
     cmm_level_5: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="SCR-CMM Level 5 - Optimizing"
     )
+    legacy_scf_ids: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Earlier SCF #s of this control, comma-separated (from the workbook's Legacy SCF # column)"
+    )
     source_sheet: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="Workbook sheet name"
     )

@@ -1,354 +1,270 @@
-"""Import SCF domains, principles, and controls from the workbook."""
+"""Import SCF domains and controls from the workbook.
+
+Controls keep their database id across SCF releases. When the workbook is a
+newer release than the database, each existing control is matched to its
+new SCF # through the workbook's "Legacy SCF #" column and renumbered in
+place (see ``renumber_controls``). Every control's text is then refreshed
+from the workbook.
+"""
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
-import pandas as pd
-
-from app.importers.base import find_sheet, load_sheet_dataframe, safe_float, safe_int, safe_str
-from app.models.control import Control, Domain, Principle
+from app.importers.base import safe_float, safe_int, safe_str
+from app.importers.workbook import norm_header, parse_scf_ids, scf_sheet_name
+from app.models.control import Control, Domain
 
 logger = logging.getLogger(__name__)
 
-_RE_SPECIAL = re.compile(r"[.*+?\[\](){}^$|\\]")
+DOMAINS_SHEET = "SCF Domains & Principles"
 
-# Expected columns in the SCF sheet
-COL_DOMAIN = "SCF Domain"
-COL_CONTROL = "SCF Control"
-COL_SCF_NUM = "SCF #"
-COL_DESCRIPTION = "Secure Controls Framework (SCF) Control Description"
-COL_CADENCE = "Conformity Validation Cadence"
-COL_ERL = "Evidence Request List (ERL) #"
-COL_QUESTION = "SCF Control Question"
-COL_WEIGHTING = "Relative Control Weighting"
-COL_APPLICABILITY = "Applicability/context"
-COL_PPTDF = "PPTDF Applicability"
-COL_REL_WEIGHT = "Relative Weight"
+# Control fields filled from the main sheet: attribute -> normalised header
+# prefixes (first match wins). A field whose column is missing is left as is.
+_TEXT_FIELDS: dict[str, tuple[str, ...]] = {
+    "description": ("secure controls framework (scf) control description",),
+    "control_question": ("scf control question",),
+    "conformity_cadence": ("conformity validation cadence",),
+    "evidence_request_list_refs": ("evidence request list (erl) #",),
+    "applicability_context": ("applicability/context",),
+    "pptdf_applicability": ("pptdf applicability",),
+    "solutions_micro_small": ("possible solutions & considerations micro-small",),
+    "solutions_small": ("possible solutions & considerations small",),
+    "solutions_medium": ("possible solutions & considerations medium",),
+    "solutions_large": ("possible solutions & considerations large",),
+    "solutions_enterprise": ("possible solutions & considerations enterprise",),
+    "cmm_level_0": ("scr-cmm level 0",),
+    "cmm_level_1": ("scr-cmm level 1",),
+    "cmm_level_2": ("scr-cmm level 2",),
+    "cmm_level_3": ("scr-cmm level 3",),
+    "cmm_level_4": ("scr-cmm level 4",),
+    "cmm_level_5": ("scr-cmm level 5",),
+}
 
-# Firm-size solution columns (from "Possible Solutions & Considerations" for each size)
-COL_FIRM_MICRO_SMALL = "Possible Solutions & Considerations - Micro-Small"
-COL_FIRM_SMALL = "Possible Solutions & Considerations - Small"
-COL_FIRM_MEDIUM = "Possible Solutions & Considerations - Medium"
-COL_FIRM_LARGE = "Possible Solutions & Considerations - Large"
-COL_FIRM_ENTERPRISE = "Possible Solutions & Considerations - Enterprise"
 
-# SCR-CMM Maturity level columns
-COL_CMM_L0 = "SCR-CMM Level 0"
-COL_CMM_L1 = "SCR-CMM Level 1"
-COL_CMM_L2 = "SCR-CMM Level 2"
-COL_CMM_L3 = "SCR-CMM Level 3"
-COL_CMM_L4 = "SCR-CMM Level 4"
-COL_CMM_L5 = "SCR-CMM Level 5"
+def _column_index(header: list[Any]) -> dict[str, int]:
+    """Positions of the columns we read, by our own key."""
+    norm = [norm_header(h) for h in header]
+
+    def find(*prefixes: str, exact: bool = False) -> int | None:
+        for i, h in enumerate(norm):
+            if any(h == p if exact else h.startswith(p) for p in prefixes):
+                return i
+        return None
+
+    cols: dict[str, int | None] = {
+        "scf_id": find("scf #", exact=True),
+        "domain": find("scf domain", exact=True),
+        "title": find("scf control", exact=True),
+        "legacy": find("legacy scf #", exact=True),
+        "relative_weighting": find("relative control weighting"),
+        "relative_weight": find("relative weight", exact=True),
+    }
+    for field, prefixes in _TEXT_FIELDS.items():
+        cols[field] = find(*prefixes)
+    if cols["scf_id"] is None:
+        raise ValueError("SCF # column not found in the SCF sheet")
+    return {k: v for k, v in cols.items() if v is not None}
+
+
+def read_control_rows(wb) -> list[dict[str, Any]]:
+    """The main sheet's control rows as dicts keyed like ``_column_index``."""
+    ws = wb[scf_sheet_name(wb)]
+    rows = ws.iter_rows(values_only=True)
+    cols = _column_index(list(next(rows)))
+    out: list[dict[str, Any]] = []
+    for n, row in enumerate(rows, start=2):
+        scf_id = safe_str(row[cols["scf_id"]]) if cols["scf_id"] < len(row) else None
+        if not scf_id:
+            continue
+        rec = {k: (row[i] if i < len(row) else None) for k, i in cols.items()}
+        rec["scf_id"] = scf_id
+        rec["_row"] = n
+        rec["_legacy"] = parse_scf_ids(rec.get("legacy"))
+        out.append(rec)
+    if not out:
+        raise ValueError("No controls found in the SCF sheet")
+    return out
+
+
+def domain_code_of(scf_id: str) -> str:
+    """Domain identifier of an SCF # ("GOV-01.2" -> "GOV")."""
+    return scf_id.split("-", 1)[0].strip().upper()
 
 
 def import_domains(session, wb) -> dict[str, int]:
-    """Extract unique SCF Domains from the main sheet."""
-    df = load_sheet_dataframe(wb, "SCF 2026.1")
-    if df is None:
-        sheet = find_sheet(wb, "SCF 2026")
-        if sheet is None:
-            return {}
-        df = pd.read_excel(wb, sheet_name=sheet.title, engine="openpyxl")
+    """Create/update one domain per SCF identifier (GOV, AAT, ...).
 
-    _rename_columns(df)
-    domain_col = _find_column(df, COL_DOMAIN)
-    if domain_col is None:
-        logger.warning("SCF Domain column not found – skipping domain import")
-        return {}
+    Names and principles come from the "SCF Domains & Principles" sheet.
+    Returns {domain code: domain id}.
+    """
+    existing = {d.code: d for d in session.query(Domain).all()}
+    if DOMAINS_SHEET not in wb.sheetnames:
+        logger.warning("%r sheet not found – domains come from control rows only", DOMAINS_SHEET)
+        return {code: d.id for code, d in existing.items()}
 
-    domain_ids: dict[str, int] = {}
-    existing = {d.code: d.id for d in session.query(Domain).all()}
+    rows = wb[DOMAINS_SHEET].iter_rows(values_only=True)
+    norm = [norm_header(h) for h in next(rows)]
 
-    # Collect unique domains by code prefix
-    for _, row in df.iterrows():
-        raw = safe_str(row.get(domain_col))
-        if not raw:
+    def idx(prefix: str) -> int | None:
+        return next((i for i, h in enumerate(norm) if h.startswith(prefix)), None)
+
+    i_name, i_code = idx("scf domain"), idx("scf identifier")
+    i_principle, i_order = idx("security, compliance & resilience (scr) principles"), idx("#")
+    if i_name is None or i_code is None:
+        raise ValueError(f"{DOMAINS_SHEET!r} sheet lacks 'SCF Domain' / 'SCF Identifier' columns")
+
+    ids: dict[str, int] = {}
+    for row in rows:
+        code = safe_str(row[i_code]) if i_code < len(row) else None
+        name = safe_str(row[i_name]) if i_name < len(row) else None
+        if not code or not name:
             continue
-        code = _domain_code(raw)
-        if code and code not in existing and code not in domain_ids:
-            domain = Domain(code=code, name=raw)
+        code = code.upper()
+        domain = existing.get(code)
+        if domain is None:
+            domain = Domain(code=code, name=name[:255])
             session.add(domain)
-            session.flush()
+            existing[code] = domain
+        domain.name = name[:255]
+        if i_principle is not None and i_principle < len(row):
+            domain.description = safe_str(row[i_principle])
+        if i_order is not None and i_order < len(row):
+            domain.display_order = safe_int(row[i_order])
+        session.flush()
+        ids[code] = domain.id
+    logger.info("Synced %d domains", len(ids))
+    return ids
+
+
+def prune_domains(session, keep: set[str]) -> int:
+    """Delete domains that are not SCF identifiers and have no controls.
+
+    Older imports created extra domains keyed by name or initials.
+    """
+    removed = 0
+    for d in session.query(Domain).all():
+        if d.code in keep:
+            continue
+        if session.query(Control.id).filter(Control.domain_id == d.id).first() is None:
+            session.delete(d)
+            removed += 1
+    session.flush()
+    if removed:
+        logger.info("Removed %d unused domains", removed)
+    return removed
+
+
+def renumber_controls(session, rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Give existing controls their new SCF # using the Legacy SCF # column.
+
+    For use when the workbook is a newer SCF release than the database.
+    Each workbook row takes over the first existing control listed in its
+    Legacy SCF # cell; other controls listed there were merged into it and
+    are deleted, as are controls no row lists. Rows whose legacy cell is
+    "NONE" become new controls later.
+
+    Returns counts: renumbered, unchanged, merged_away, removed.
+    """
+    existing: dict[str, Control] = {c.scf_id: c for c in session.query(Control).all()}
+    claimed: dict[int, str] = {}            # control id -> new scf_id
+    listed: set[str] = set()
+    merged_away: list[Control] = []
+
+    for rec in rows:
+        owner: Control | None = None
+        for old in rec["_legacy"]:
+            listed.add(old)
+            ctrl = existing.get(old)
+            if ctrl is None or ctrl.id in claimed:
+                continue
+            if owner is None:
+                owner = ctrl
+                claimed[ctrl.id] = rec["scf_id"]
+            else:
+                merged_away.append(ctrl)
+
+    removed = [c for scf_id, c in existing.items() if c.id not in claimed and c not in merged_away]
+    for ctrl in merged_away + removed:
+        session.delete(ctrl)
+    session.flush()
+
+    by_id = {c.id: c for c in existing.values()}
+    # Two steps so that swapping numbers never breaks the unique scf_id.
+    for cid in claimed:
+        by_id[cid].scf_id = f"~{cid}"
+    session.flush()
+    unchanged = 0
+    for cid, new_scf_id in claimed.items():
+        ctrl = by_id[cid]
+        old = next((k for k, v in existing.items() if v is ctrl), None)
+        unchanged += old == new_scf_id
+        ctrl.scf_id = new_scf_id
+    session.flush()
+
+    counts = {
+        "renumbered": len(claimed) - unchanged,
+        "unchanged": unchanged,
+        "merged_away": len(merged_away),
+        "removed": len(removed),
+    }
+    logger.info("Renumbered controls: %s", counts)
+    return counts
+
+
+def import_controls(session, wb, domain_ids: dict[str, int], renumber: bool = False) -> int:
+    """Create or refresh every control in the main sheet.
+
+    With ``renumber`` (workbook newer than the database) existing controls
+    are first matched to their new SCF # (``renumber_controls``). Controls no
+    longer in the workbook are removed either way.
+    """
+    rows = read_control_rows(wb)
+    sheet = scf_sheet_name(wb)
+    if renumber:
+        renumber_controls(session, rows)
+
+    existing: dict[str, Control] = {c.scf_id: c for c in session.query(Control).all()}
+    wanted = {rec["scf_id"] for rec in rows}
+    stale = [c for scf_id, c in existing.items() if scf_id not in wanted]
+    for ctrl in stale:
+        session.delete(ctrl)
+    if stale:
+        logger.info("Removed %d controls not in the workbook", len(stale))
+    session.flush()
+
+    created = 0
+    for rec in rows:
+        scf_id = rec["scf_id"]
+        code = domain_code_of(scf_id)
+        if code not in domain_ids:
+            domain = session.query(Domain).filter_by(code=code).first()
+            if domain is None:
+                domain = Domain(code=code, name=(safe_str(rec.get("domain")) or code)[:255])
+                session.add(domain)
+                session.flush()
             domain_ids[code] = domain.id
 
-    session.flush()
-    domain_ids.update(existing)
-    logger.info("Imported %d domains", len(domain_ids))
-    return domain_ids
-
-
-def import_principles(session, wb, domain_ids: dict[str, int]) -> dict[str, int]:
-    """Extract SCF Control (principle) entries from the main sheet."""
-    df = load_sheet_dataframe(wb, "SCF 2026.1")
-    if df is None:
-        sheet = find_sheet(wb, "SCF 2026")
-        if sheet is None:
-            return {}
-        df = pd.read_excel(wb, sheet_name=sheet.title, engine="openpyxl")
-
-    _rename_columns(df)
-    principle_ids: dict[str, int] = {}
-    existing = {(p.code, p.domain_id): p.id for p in session.query(Principle).all()}
-
-    scf_col = _find_column(df, COL_CONTROL)
-    domain_col = _find_column(df, COL_DOMAIN)
-    if scf_col is None:
-        logger.warning("SCF Control column not found – skipping principle import")
-        return {}
-
-    seen = set()
-    for _, row in df.iterrows():
-        raw = safe_str(row.get(scf_col))
-        domain_raw = safe_str(row.get(domain_col)) if domain_col else None
-        if not raw:
-            continue
-        domain_code = _domain_code(domain_raw) if domain_raw else None
-        domain_id = domain_ids.get(domain_code) if domain_code else None
-
-        if (raw, domain_id) in seen:
-            continue
-        seen.add((raw, domain_id))
-        if (raw, domain_id) in existing:
-            principle_ids[raw] = existing[(raw, domain_id)]
-            continue
-
-        principle = Principle(code=raw, name=raw, domain_id=domain_id)
-        session.add(principle)
-        session.flush()
-        principle_ids[raw] = principle.id
+        ctrl = existing.get(scf_id)
+        if ctrl is None:
+            ctrl = Control(scf_id=scf_id, title=scf_id)
+            session.add(ctrl)
+            created += 1
+        ctrl.domain_id = domain_ids[code]
+        ctrl.title = (safe_str(rec.get("title")) or scf_id)[:500]
+        for field in _TEXT_FIELDS:
+            if field in rec:
+                setattr(ctrl, field, safe_str(rec[field]))
+        if "relative_weighting" in rec:
+            ctrl.relative_weighting = safe_float(rec["relative_weighting"])
+        if "relative_weight" in rec:
+            ctrl.relative_weight = safe_int(rec["relative_weight"])
+        if "legacy" in rec:
+            ctrl.legacy_scf_ids = ", ".join(rec["_legacy"]) or None
+        ctrl.source_sheet = sheet
+        ctrl.source_row = rec["_row"]
 
     session.flush()
-    logger.info("Imported %d principles", len(principle_ids))
-    return principle_ids
-
-
-def _find_flex_column(df: pd.DataFrame, *candidates: str) -> str | None:
-    """Find a column by trying multiple candidate strings (case-insensitive).
-
-    Candidates containing regex special characters (``.*+?[](){}^$|\\``)
-    are treated as regex patterns; others use plain substring match.
-    """
-    for col in df.columns:
-        if col is None or pd.isna(col):
-            continue
-        s = " ".join(str(col).strip().lower().split())
-        for candidate in candidates:
-            if _re_special.search(candidate):
-                if re.search(candidate.lower(), s):
-                    return col
-            elif candidate.lower() in s:
-                return col
-    return None
-
-
-def import_controls(
-    session,
-    wb,
-    domain_ids: dict[str, int],
-    principle_ids: dict[str, int],
-) -> int:
-    """Import canonical SCF controls from the main sheet.
-
-    Now imports:
-    - Firm-size solutions columns (Micro-Small, Small, Medium, Large, Enterprise)
-    - SCR-CMM Maturity levels (Level 0 through Level 5)
-    - PPTDF Applicability and Relative Weight
-    """
-    df = load_sheet_dataframe(wb, "SCF 2026.1")
-    if df is None:
-        sheet = find_sheet(wb, "SCF 2026")
-        if sheet is None:
-            return 0
-        df = pd.read_excel(wb, sheet_name=sheet.title, engine="openpyxl")
-
-    _rename_columns(df)
-    # Pre-load ALL existing controls into a dict keyed by scf_id for fast in-memory updates
-    existing_ctrls: dict[str, Control] = {c.scf_id: c for c in session.query(Control).all()}
-    existing_ids: dict[str, int] = {scf_id: c.id for scf_id, c in existing_ctrls.items()}
-
-    scf_num_col = _find_column(df, COL_SCF_NUM)
-    domain_col = _find_column(df, COL_DOMAIN)
-    scf_control_col = _find_column(df, COL_CONTROL)
-    desc_col = _find_column(df, COL_DESCRIPTION)
-    cadence_col = _find_column(df, COL_CADENCE)
-    erl_col = _find_column(df, COL_ERL)
-    question_col = _find_column(df, COL_QUESTION)
-    weighting_col = _find_column(df, COL_WEIGHTING)
-    applicability_col = _find_column(df, COL_APPLICABILITY)
-
-    # New columns - flex matching for Possible Solutions & Considerations columns
-    pptdf_col = _find_flex_column(df, COL_PPTDF, "pptdf")
-    rel_weight_col = _find_flex_column(df, COL_REL_WEIGHT, "relative weight")
-
-    # Firm-size columns: match on "Possible Solutions & Considerations" with size keyword
-    firm_micro_col = _find_flex_column(df, COL_FIRM_MICRO_SMALL, "micro-small", "micro small", "solutions.*micro")
-    firm_small_col = _find_flex_column(df, COL_FIRM_SMALL, "solutions.*small", " small business")
-    firm_medium_col = _find_flex_column(df, COL_FIRM_MEDIUM, "solutions.*medium", "medium business")
-    firm_large_col = _find_flex_column(df, COL_FIRM_LARGE, "solutions.*large", "large business")
-    firm_enterprise_col = _find_flex_column(df, COL_FIRM_ENTERPRISE, "solutions.*enterprise", "enterprise (>")
-
-    # Position-based fallback: if micro was found but some other size columns are missing,
-    # assume they're in adjacent columns (cols 6-10 in the workbook)
-    if firm_micro_col is not None and (firm_small_col is None or firm_medium_col is None or firm_large_col is None or firm_enterprise_col is None):
-        cols_list = list(df.columns)
-        if firm_micro_col in cols_list:
-            micro_idx = cols_list.index(firm_micro_col)
-            for offset, attr_name in [(1, "solutions_small"), (2, "solutions_medium"), (3, "solutions_large"), (4, "solutions_enterprise")]:
-                idx = micro_idx + offset
-                if idx < len(cols_list):
-                    col_at = cols_list[idx]
-                    if col_at is not None and not pd.isna(col_at):
-                        s_at = " ".join(str(col_at).strip().lower().split())
-                        if "solutions" in s_at or "business" in s_at or "staff" in s_at:
-                            if offset == 1 and firm_small_col is None:
-                                firm_small_col = col_at
-                            elif offset == 2 and firm_medium_col is None:
-                                firm_medium_col = col_at
-                            elif offset == 3 and firm_large_col is None:
-                                firm_large_col = col_at
-                            elif offset == 4 and firm_enterprise_col is None:
-                                firm_enterprise_col = col_at
-
-    # Maturity columns
-    cmm_l0_col = _find_flex_column(df, COL_CMM_L0, "cmm level 0", "scr-cmm.*0")
-    cmm_l1_col = _find_flex_column(df, COL_CMM_L1, "cmm level 1", "scr-cmm.*1")
-    cmm_l2_col = _find_flex_column(df, COL_CMM_L2, "cmm level 2", "scr-cmm.*2")
-    cmm_l3_col = _find_flex_column(df, COL_CMM_L3, "cmm level 3", "scr-cmm.*3")
-    cmm_l4_col = _find_flex_column(df, COL_CMM_L4, "cmm level 4", "scr-cmm.*4")
-    cmm_l5_col = _find_flex_column(df, COL_CMM_L5, "cmm level 5", "scr-cmm.*5")
-
-    if scf_num_col is None:
-        logger.warning("SCF # column not found – cannot import controls")
-        return 0
-
-    count = 0
-    update_count = 0
-    sheet_name = "SCF 2026.1"
-
-    for idx, row in df.iterrows():
-        scf_id = safe_str(row.get(scf_num_col))
-        if not scf_id:
-            continue
-
-        domain_raw = safe_str(row.get(domain_col)) if domain_col else None
-        domain_code = _domain_code(domain_raw) if domain_raw else None
-        domain_id = domain_ids.get(domain_code)
-        control_raw = safe_str(row.get(scf_control_col)) if scf_control_col else None
-        principle_id = principle_ids.get(control_raw) if control_raw else None
-
-        if scf_id in existing_ctrls:
-            # Update existing control in-memory (no extra DB query needed)
-            ctrl = existing_ctrls[scf_id]
-            ctrl.relative_weight = safe_int(row.get(rel_weight_col)) if rel_weight_col else ctrl.relative_weight
-            ctrl.pptdf_applicability = safe_str(row.get(pptdf_col)) if pptdf_col else ctrl.pptdf_applicability
-            if firm_micro_col:
-                ctrl.solutions_micro_small = safe_str(row.get(firm_micro_col))
-            if firm_small_col:
-                ctrl.solutions_small = safe_str(row.get(firm_small_col))
-            if firm_medium_col:
-                ctrl.solutions_medium = safe_str(row.get(firm_medium_col))
-            if firm_large_col:
-                ctrl.solutions_large = safe_str(row.get(firm_large_col))
-            if firm_enterprise_col:
-                ctrl.solutions_enterprise = safe_str(row.get(firm_enterprise_col))
-            if cmm_l0_col:
-                ctrl.cmm_level_0 = safe_str(row.get(cmm_l0_col))
-            if cmm_l1_col:
-                ctrl.cmm_level_1 = safe_str(row.get(cmm_l1_col))
-            if cmm_l2_col:
-                ctrl.cmm_level_2 = safe_str(row.get(cmm_l2_col))
-            if cmm_l3_col:
-                ctrl.cmm_level_3 = safe_str(row.get(cmm_l3_col))
-            if cmm_l4_col:
-                ctrl.cmm_level_4 = safe_str(row.get(cmm_l4_col))
-            if cmm_l5_col:
-                ctrl.cmm_level_5 = safe_str(row.get(cmm_l5_col))
-            update_count += 1
-            count += 1
-            continue
-
-        control = Control(
-            scf_id=scf_id,
-            domain_id=domain_id,
-            principle_id=principle_id,
-            title=safe_str(row.get(scf_control_col)) or scf_id,
-            description=safe_str(row.get(desc_col)) if desc_col else None,
-            control_question=safe_str(row.get(question_col)) if question_col else None,
-            conformity_cadence=safe_str(row.get(cadence_col)) if cadence_col else None,
-            relative_weighting=safe_float(row.get(weighting_col)) if weighting_col else None,
-            evidence_request_list_refs=safe_str(row.get(erl_col)) if erl_col else None,
-            applicability_context=safe_str(row.get(applicability_col)) if applicability_col else None,
-            # New fields
-            relative_weight=safe_int(row.get(rel_weight_col)) if rel_weight_col else None,
-            pptdf_applicability=safe_str(row.get(pptdf_col)) if pptdf_col else None,
-            # Firm-size solutions
-            solutions_micro_small=safe_str(row.get(firm_micro_col)) if firm_micro_col else None,
-            solutions_small=safe_str(row.get(firm_small_col)) if firm_small_col else None,
-            solutions_medium=safe_str(row.get(firm_medium_col)) if firm_medium_col else None,
-            solutions_large=safe_str(row.get(firm_large_col)) if firm_large_col else None,
-            solutions_enterprise=safe_str(row.get(firm_enterprise_col)) if firm_enterprise_col else None,
-            # SCR-CMM Maturity levels
-            cmm_level_0=safe_str(row.get(cmm_l0_col)) if cmm_l0_col else None,
-            cmm_level_1=safe_str(row.get(cmm_l1_col)) if cmm_l1_col else None,
-            cmm_level_2=safe_str(row.get(cmm_l2_col)) if cmm_l2_col else None,
-            cmm_level_3=safe_str(row.get(cmm_l3_col)) if cmm_l3_col else None,
-            cmm_level_4=safe_str(row.get(cmm_l4_col)) if cmm_l4_col else None,
-            cmm_level_5=safe_str(row.get(cmm_l5_col)) if cmm_l5_col else None,
-            source_sheet=sheet_name,
-            source_row=int(idx) + 2,  # +2 for 0-index + header
-        )
-        session.add(control)
-        session.flush()
-        existing[scf_id] = control.id
-        count += 1
-
-    session.flush()
-    logger.info("Imported %d controls (%d new, %d updated)", count, count - update_count, update_count)
-    return count
-
-
-def _find_column(df: pd.DataFrame, name: str) -> str | None:
-    """Find an actual column name in the DataFrame that matches the given name (case-insensitive)."""
-    for col in df.columns:
-        if str(col).strip().lower() == name.lower():
-            return col
-    return None
-
-
-def _rename_columns(df: pd.DataFrame) -> None:
-    """Rename common aliased columns to expected names."""
-    mapping = {}
-    for col in df.columns:
-        if col is None or pd.isna(col):
-            continue
-        s = str(col).strip().lower()
-        if s in ("scf domain", "domain", "scf domain "):
-            mapping[col] = COL_DOMAIN
-        elif s in ("scf control", "control name", "scf control name", "control", "scf control "):
-            mapping[col] = COL_CONTROL
-        elif s in ("scf #", "scf # ", "scf number", "control #", "control number"):
-            mapping[col] = COL_SCF_NUM
-        elif s in ("scf control description", "secure controls framework (scf) control description", "description"):
-            mapping[col] = COL_DESCRIPTION
-    if mapping:
-        df.rename(columns=mapping, inplace=True)
-
-
-def _domain_code(domain_name: str | None) -> str | None:
-    """Derive a short domain code from the domain name."""
-    if not domain_name:
-        return None
-    parts = domain_name.strip().split(" – ")
-    if len(parts) > 1:
-        return parts[0].strip()
-    parts = domain_name.strip().split(" - ")
-    if len(parts) > 1:
-        return parts[0].strip()
-    # Use first 2-4 uppercase letters
-    words = domain_name.strip().split()
-    if len(words) >= 2:
-        return "".join(w[0].upper() for w in words if w[0].isalpha())[:6]
-    return domain_name.strip()[:6].upper()
+    logger.info("Imported %d controls (%d new, %d refreshed)", len(rows), created, len(rows) - created)
+    return len(rows)

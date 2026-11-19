@@ -13,9 +13,8 @@ TARGET_FRAMEWORKS: list[tuple[str, str]] = [
     ("EU-GDPR", "GDPR"),
     ("ISO27001", "ISO 27001"),
     ("NIST-CSF", "NIST CSF"),
-    # SCF only has the 1998 Act; Nic wants the 2018 Act. Placeholder until
-    # we know whether SCF's refs are really 2018 or a new framework row is needed.
-    ("EMEA-UK-DPA", "UK DPA (1998)"),
+    # From SCF 2026.3 this framework is the UK DPA 2018 (FDI emea-gbr-dpa-2018).
+    ("EMEA-UK-DPA", "UK DPA (2018)"),
     ("COBIT", "COBIT"),
     ("EU-DORA", "DORA"),
     ("EMEA-UK-CYBER-ESSENTIALS", "Cyber Essentials"),

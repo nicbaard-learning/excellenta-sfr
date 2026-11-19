@@ -35,7 +35,7 @@ def reimport_objectives(
 
     Workflow:
         1. Deletes all existing assessment objectives
-        2. Re-imports from `secure-controls-framework-scf-2026-1.xlsx`
+        2. Re-imports from the configured workbook (`DEFAULT_WORKBOOK`)
         3. Verifies integrity (no null codes, no placeholder text)
 
     Returns counts for deleted, imported, and verification results.

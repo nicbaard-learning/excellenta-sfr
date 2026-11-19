@@ -84,7 +84,7 @@ uvicorn app.main:app --reload --port 8000
 Place the workbook file in the project root, then run:
 
 ```bash
-python -m app.importers.load_scf --file secure-controls-framework-scf-2026-1.xlsx
+python -m app.importers.load_scf --file secure-controls-framework-scf-2026-3.xlsx
 ```
 
 The importer is designed to be safely re-runnable (skips existing records on conflict).
