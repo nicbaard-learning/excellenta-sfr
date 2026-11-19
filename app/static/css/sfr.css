@@ -102,6 +102,13 @@ td.scf-id { font-family: "SF Mono", "Cascadia Code", monospace; font-weight: 600
 .badge.success { background: #d1fae5; color: #059669; border-color: #6ee7b7; }
 .badge.warn { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
 
+/* ── Framework text progress ──────────────────────────────────── */
+.progress-track { height: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.progress-fill { height: 100%; background: #10b981; transition: width .3s; }
+.progress-caption { margin: 8px 0 12px; font-size: 13px; }
+.progress-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 16px; }
+.progress-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+
 /* ── Stats row ────────────────────────────────────────────────── */
 .stats {
   display: grid;

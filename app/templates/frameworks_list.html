@@ -7,6 +7,30 @@
   <p>{{ total }} frameworks loaded from the SCF workbook</p>
 </div>
 
+<div class="card" id="text-progress">
+  <div class="card-header">
+    <span>Framework text loaded</span>
+    <span class="badge {% if progress.done == progress.total %}success{% else %}primary{% endif %}">{{ progress.done }} of {{ progress.total }} done</span>
+  </div>
+  <div class="card-body">
+    <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="{{ progress.total }}" aria-valuenow="{{ progress.done }}" aria-label="Framework text loaded">
+      <div class="progress-fill" style="width: {{ progress.percent }}%"></div>
+    </div>
+    <p class="text-muted progress-caption">{{ progress.percent }}% of target frameworks have their full text in the SFR</p>
+    <ul class="progress-list">
+      {% for t in progress["items"] %}
+      <li>
+        {% if t.done %}<span class="badge success">Done</span>{% else %}<span class="badge">To do</span>{% endif %}
+        {% if t.id %}<a href="/frameworks/{{ t.id }}">{{ t.label }}</a>{% else %}{{ t.label }}{% endif %}
+        <code>{{ t.code }}</code>
+        {% if t.done %}<span class="text-muted">{{ t.provisions }} provisions</span>
+        {% elif not t.id %}<span class="badge warn">Not in database</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-header">
     <span>All Frameworks</span>
@@ -30,6 +54,7 @@
           <td>
             <a href="/frameworks/{{ fw.id }}">{{ fw.name }}</a>
             {% if fw.is_scf %}<span class="badge success">SCF</span>{% endif %}
+            {% if fw.provisions %}<span class="badge success">Text loaded</span>{% endif %}
           </td>
           <td>{% if fw.category %}{{ fw.category }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td>{{ fw.control_count }}</td>

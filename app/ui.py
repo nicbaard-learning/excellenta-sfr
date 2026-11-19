@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app import scf_attribution
 from app.database import get_session
+from app.framework_targets import build_progress
 from app.services.comparison_service import ComparisonService
 from app.services.control_service import ControlService
 from app.services.framework_service import FrameworkService
@@ -151,6 +152,7 @@ async def framework_list(
     svc = FrameworkService(session)
     frameworks = svc.list_frameworks()
     counts = svc.get_all_control_counts()
+    req_counts = svc.get_requirement_counts()
     items = []
     for fw in frameworks:
         items.append({
@@ -160,10 +162,12 @@ async def framework_list(
             "category": fw.category,
             "is_scf": fw.is_scf,
             "control_count": counts.get(fw.id, 0),
+            "provisions": req_counts.get(fw.id, 0),
         })
     return templates.TemplateResponse(
         "frameworks_list.html",
-        {"request": request, "frameworks": items, "total": len(items)},
+        {"request": request, "frameworks": items, "total": len(items),
+         "progress": build_progress(items, req_counts)},
     )
 
 

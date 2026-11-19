@@ -48,6 +48,15 @@ class FrameworkService:
             query = query.filter(Framework.category == category)
         return query.all()
 
+    def get_requirement_counts(self) -> dict[int, int]:
+        """Number of loaded provisions per framework id (frameworks with none are absent)."""
+        rows = (
+            self.session.query(FrameworkRequirement.framework_id, func.count(FrameworkRequirement.id))
+            .group_by(FrameworkRequirement.framework_id)
+            .all()
+        )
+        return {fw_id: count for fw_id, count in rows}
+
     def get_framework(self, framework_id: int) -> Framework | None:
         """Get a single framework by ID."""
         return self.session.query(Framework).filter(Framework.id == framework_id).first()
