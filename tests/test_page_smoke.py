@@ -71,6 +71,18 @@ def test_mcp_requires_valid_token(path, auth):
     assert r.status_code == 401, (path, auth, r.status_code, r.text[:200])
 
 
+def test_mcp_cors_preflight_needs_no_token():
+    # CORSMiddleware must stay outside MCPAuthMiddleware so browsers can preflight.
+    r = client.options("/mcp/sse", headers={
+        **HOST,
+        "Origin": "http://localhost:3000",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+    })
+    assert r.status_code == 200, (r.status_code, r.text[:200])
+    assert "access-control-allow-origin" in r.headers
+
+
 def test_mcp_messages_reach_mcp_app_with_token():
     # A valid token passes auth; mcp then rejects the missing session id
     # (400), which shows the Starlette Mount + sse_app() still route.
