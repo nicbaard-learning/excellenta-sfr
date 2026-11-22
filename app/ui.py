@@ -33,6 +33,7 @@ async def home(
 ):
     """New landing page – Compliance Intelligence Engine."""
     return templates.TemplateResponse(
+        request,
         "home.html",
         {"request": request},
     )
@@ -45,6 +46,7 @@ async def evidence_page(
 ):
     """Evidence Intelligence page."""
     return templates.TemplateResponse(
+        request,
         "evidence.html",
         {"request": request},
     )
@@ -57,6 +59,7 @@ async def translate_page(
 ):
     """Framework Translation page."""
     return templates.TemplateResponse(
+        request,
         "translate.html",
         {"request": request},
     )
@@ -69,6 +72,7 @@ async def maturity_page(
 ):
     """Maturity Assessment page."""
     return templates.TemplateResponse(
+        request,
         "maturity.html",
         {"request": request},
     )
@@ -81,6 +85,7 @@ async def roadmap_page(
 ):
     """Compliance Roadmap page."""
     return templates.TemplateResponse(
+        request,
         "roadmap.html",
         {"request": request},
     )
@@ -93,6 +98,7 @@ async def risk_intelligence_page(
 ):
     """Risk Intelligence page."""
     return templates.TemplateResponse(
+        request,
         "risk_intelligence.html",
         {"request": request},
     )
@@ -131,6 +137,7 @@ async def about(
             stats[key] = 0
 
     return templates.TemplateResponse(
+        request,
         "about.html",
         {
             "request": request,
@@ -165,6 +172,7 @@ async def framework_list(
             "provisions": req_counts.get(fw.id, 0),
         })
     return templates.TemplateResponse(
+        request,
         "frameworks_list.html",
         {"request": request, "frameworks": items, "total": len(items),
          "progress": build_progress(items, req_counts)},
@@ -182,6 +190,7 @@ async def framework_detail(
     fw = svc.get_framework(framework_id)
     if not fw:
         return templates.TemplateResponse(
+            request,
             "framework_detail.html",
             {"request": request, "fw": None, "controls": [], "versions": [],
              "jurisdiction_codes": [], "related": [], "requirements": [], "scf_credit": None,
@@ -229,6 +238,7 @@ async def framework_detail(
     scf = None if fw.is_scf else svc.get_scf_framework()
 
     return templates.TemplateResponse(
+        request,
         "framework_detail.html",
         {
             "request": request,
@@ -285,6 +295,7 @@ async def control_detail(
 
     if not ctrl:
         return templates.TemplateResponse(
+            request,
             "control_detail.html",
             {"request": request, "control": None, "mappings": [],
              "objectives": [], "evidence": [], "compensating": [],
@@ -353,6 +364,7 @@ async def control_detail(
     } for a in auth_sources]
 
     return templates.TemplateResponse(
+        request,
         "control_detail.html",
         {
             "request": request,
@@ -419,6 +431,7 @@ async def recommend_frameworks(
             recommendations = []
 
     return templates.TemplateResponse(
+        request,
         "recommend.html",
         {
             "request": request,
@@ -484,6 +497,7 @@ async def compare_frameworks(
             result = {"error": str(exc)}
 
     return templates.TemplateResponse(
+        request,
         "compare.html",
         {
             "request": request,

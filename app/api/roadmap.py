@@ -45,6 +45,7 @@ async def print_roadmap(
         focus_domain=focus_domain,
     )
     return templates.TemplateResponse(
+        request,
         "roadmap_print.html",
         {"request": request, "data": data, "scf_attribution": scf_attribution.ATTRIBUTION},
     )

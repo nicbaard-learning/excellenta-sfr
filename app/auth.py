@@ -368,7 +368,7 @@ async def oauth_token(request: Request):
 
     return {
         "access_token": access_token,
-        "token_type": "bearer",
+        "token_type": "bearer",  # nosec B105 - OAuth token type, not a password
         "expires_in": TOKEN_EXPIRY,
         "scope": "mcp",
     }
@@ -471,7 +471,9 @@ class MCPAuthMiddleware:
     avoid the known incompatibility between BaseHTTPMiddleware and SSE streaming
     responses. It passes through ASGI messages without buffering the body.
 
-    Protects /mcp/sse and /mcp/messages routes inside the mounted MCP sub-app.
+    Wraps only the mounted MCP sub-app (/mcp/sse, /mcp/messages) and requires
+    a token on every HTTP request into it. CORS preflight is answered by the
+    outer CORSMiddleware before it gets here.
     """
 
     def __init__(self, app):
@@ -482,28 +484,27 @@ class MCPAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        path = scope.get("path", "").rstrip("/")
+        # This middleware only wraps the mounted MCP sub-app, so every HTTP
+        # request reaching it needs a token. Don't match on scope["path"]:
+        # starlette 1.x keeps the full path ("/mcp/sse") inside a Mount, so a
+        # check for "/sse" would silently let requests through.
+        path = scope.get("path", "")
 
-        # Only protect MCP SSE transport endpoints
-        is_mcp_endpoint = path == "/sse" or path.startswith("/messages")
+        headers = dict(scope.get("headers", []))
+        auth_bytes = headers.get(b"authorization", b"")
+        auth_header = auth_bytes.decode("utf-8", errors="replace")
 
-        if is_mcp_endpoint:
-            # Extract Bearer token from headers
-            headers = dict(scope.get("headers", []))
-            auth_bytes = headers.get(b"authorization", b"")
-            auth_header = auth_bytes.decode("utf-8", errors="replace")
+        if not auth_header.startswith("Bearer "):
+            logger.warning("MCP request without Bearer token: %s", path)
+            return await _send_401(send, "Unauthorized – Bearer token required")
 
-            if not auth_header.startswith("Bearer "):
-                logger.warning("MCP request without Bearer token: %s", path)
-                return await _send_401(send, "Unauthorized – Bearer token required")
+        token_str = auth_header[len("Bearer "):]
+        payload = verify_token(token_str)
+        if not payload:
+            logger.warning("MCP request with invalid/expired token: %s", path)
+            return await _send_401(send, "Invalid or expired token")
 
-            token_str = auth_header[len("Bearer "):]
-            payload = verify_token(token_str)
-            if not payload:
-                logger.warning("MCP request with invalid/expired token: %s", path)
-                return await _send_401(send, "Invalid or expired token")
-
-            logger.debug("Authenticated MCP request: sub=%s scope=%s", payload.get("sub"), payload.get("scope"))
+        logger.debug("Authenticated MCP request: sub=%s scope=%s", payload.get("sub"), payload.get("scope"))
 
         await self.app(scope, receive, send)
 
