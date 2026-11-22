@@ -36,11 +36,12 @@ def provision_number(mapped_ref: str | None) -> str | None:
 
 
 _PROVISION_QUERY = re.compile(
-    r"^(?:(section|sec|s|article|art|regulation|reg|r)\.?\s*)?(\d+[A-Z]?)\b", re.IGNORECASE
+    r"^(?:(section|sec|s|article|art|recital|rec|regulation|reg|r)\.?\s*)?(\d+[A-Z]?)\b", re.IGNORECASE
 )
 _QUERY_KINDS = {
     "section": {"section"}, "sec": {"section"}, "s": {"section"},
     "article": {"article"}, "art": {"article"},
+    "recital": {"recital"}, "rec": {"recital"},
     "regulation": {"regulation"}, "reg": {"regulation"}, "r": {"regulation"},
 }
 

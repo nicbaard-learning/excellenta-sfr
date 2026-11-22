@@ -45,6 +45,22 @@ def test_chapter_brings_its_parts_and_sections(popia_rows):
     assert "s1" not in refs and "r1" not in refs
 
 
+GDPR_ROWS = [
+    SimpleNamespace(ref="recitals", kind="part", number=None, parent_ref=None),
+    SimpleNamespace(ref="rec71", kind="recital", number="71", parent_ref="recitals"),
+    SimpleNamespace(ref="ch4", kind="chapter", number="IV", parent_ref=None),
+    SimpleNamespace(ref="art71", kind="article", number="71", parent_ref="ch4"),
+]
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("recital 71", ["rec71"]), ("Rec. 71", ["rec71"]), ("rec71", ["rec71"]),
+    ("71", ["art71"]), ("Art 71(1)", ["art71"]), ("recitals", ["recitals", "rec71"]),
+])
+def test_gdpr_recital_and_article_queries(query, expected):
+    assert _refs(GDPR_ROWS, query) == expected
+
+
 @pytest.mark.parametrize("query", ["", "s999", "nonsense", "form99"])
 def test_no_match(popia_rows, query):
     assert _refs(popia_rows, query) == []
